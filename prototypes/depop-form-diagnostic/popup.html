@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Depop form diagnostic</title>
+  <title>Depop prototype</title>
   <style>
     body { font: 14px system-ui; margin: 12px; width: 420px; }
-    button { padding: 8px 12px; }
-    pre { background: #f4f4f4; max-height: 480px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+    button { margin: 0 6px 8px 0; padding: 8px 12px; }
+    pre { background: #f4f4f4; max-height: 420px; overflow: auto; padding: 10px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>Depop form diagnostic</h1>
-  <p>Scans labels and field types only. It never reads entered values.</p>
+  <h1>Depop prototype</h1>
+  <p>Scans metadata or opens a dry-run fill panel. It never submits.</p>
   <button id="scan">Scan this page</button>
   <button id="copy" disabled>Copy JSON</button>
-  <pre id="output">Open Depop’s create-listing page, then scan.</pre>
+  <button id="fill">Open dry-run panel</button>
+  <pre id="output">Open Depop’s create-listing page.</pre>
   <script src="popup.js"></script>
 </body>
 </html>

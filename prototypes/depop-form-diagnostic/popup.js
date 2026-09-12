@@ -16,11 +16,8 @@ function scanForm() {
   };
   const labelFor = (element) => {
     const explicit = element.id && document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
-    return safeText(element.getAttribute('aria-label') ||
-      text(explicit) ||
-      text(element.closest('label')) ||
-      element.getAttribute('placeholder') ||
-      element.getAttribute('name'));
+    return safeText(element.getAttribute('aria-label') || text(explicit) || text(element.closest('label')) ||
+      element.getAttribute('placeholder') || element.getAttribute('name'));
   };
 
   return {
@@ -46,6 +43,106 @@ function assertSafe(result) {
   if (JSON.stringify(result).match(/"value"\s*:/i)) throw new Error('Unsafe report: field value detected');
 }
 
+function openDryRunPanel() {
+  document.querySelector('#cents-depop-prototype')?.remove();
+
+  const panel = document.createElement('aside');
+  panel.id = 'cents-depop-prototype';
+  panel.style.cssText = 'position:fixed;z-index:2147483647;top:12px;right:12px;width:360px;max-height:calc(100vh - 24px);overflow:auto;background:white;color:#111;border:2px solid #111;border-radius:8px;padding:14px;box-shadow:0 8px 30px #0005;font:14px system-ui';
+  panel.innerHTML = `
+    <button data-close style="float:right">Close</button>
+    <h2 style="margin-top:0">Cents dry run</h2>
+    <p><strong>Never submits.</strong> Exact option text is required; uncertainty stops the fill.</p>
+    <label>Description<textarea data-field="description" rows="4" style="display:block;width:100%"></textarea></label>
+    <label>Category path<input data-field="category" placeholder="Tops > T-shirts" style="display:block;width:100%"></label>
+    <label>Brand<input data-field="brand" style="display:block;width:100%"></label>
+    <label>Size<input data-field="size" style="display:block;width:100%"></label>
+    <label>Condition<input data-field="condition" placeholder="Good" style="display:block;width:100%"></label>
+    <label>Color<input data-field="color" style="display:block;width:100%"></label>
+    <label>Source<input data-field="source" style="display:block;width:100%"></label>
+    <label>Age<input data-field="age" style="display:block;width:100%"></label>
+    <label>Style<input data-field="style" style="display:block;width:100%"></label>
+    <label>Item price<input data-field="price" type="number" min="0" step="0.01" style="display:block;width:100%"></label>
+    <label>Package size<input data-field="package" style="display:block;width:100%"></label>
+    <label>Ordered JPEG/PNG photos<input data-field="photos" type="file" accept="image/jpeg,image/png" multiple style="display:block;width:100%"></label>
+    <button data-fill style="margin-top:10px;padding:8px 12px">Fill, never submit</button>
+    <pre data-result style="white-space:pre-wrap;background:#f4f4f4;padding:8px"></pre>`;
+  document.body.append(panel);
+
+  const result = panel.querySelector('[data-result]');
+  const own = (name) => panel.querySelector(`[data-field="${name}"]`);
+  const text = (element) => element?.textContent?.replace(/\s+/g, ' ').trim() || '';
+  const visible = (element) => element.getClientRects().length > 0;
+  const pageControl = (label) => [...document.querySelectorAll('input,textarea,[role="combobox"]')]
+    .filter((element) => !panel.contains(element) && visible(element))
+    .find((element) => {
+      const explicit = element.id && document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
+      const actual = element.getAttribute('aria-label') || text(explicit) || text(element.closest('label')) || element.getAttribute('placeholder') || '';
+      return actual.trim().toLowerCase() === label.toLowerCase();
+    });
+
+  const setValue = (element, value) => {
+    if (!element) throw new Error('Field not found');
+    const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const choose = async (label, wanted) => {
+    if (!wanted) return `${label}: skipped`;
+    const control = pageControl(label);
+    if (!control) throw new Error(`${label}: control not found`);
+    control.click();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const options = [...document.querySelectorAll('[role="option"], [role="listbox"] li')]
+      .filter((element) => !panel.contains(element) && visible(element));
+    const exact = options.filter((element) => text(element).toLowerCase() === wanted.trim().toLowerCase());
+    if (exact.length !== 1) {
+      const available = options.map(text).filter(Boolean).slice(0, 12).join(', ');
+      throw new Error(`${label}: expected one exact “${wanted}” option; found ${exact.length}. Visible: ${available || 'none'}`);
+    }
+    exact[0].click();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return `${label}: ${wanted}`;
+  };
+
+  panel.querySelector('[data-close]').addEventListener('click', () => panel.remove());
+  panel.querySelector('[data-fill]').addEventListener('click', async () => {
+    const outcomes = [];
+    try {
+      const description = own('description').value.trim();
+      const price = own('price').value.trim();
+      if (description) { setValue(pageControl('Description'), description); outcomes.push('Description: filled'); }
+
+      for (const category of own('category').value.split('>').map((part) => part.trim()).filter(Boolean)) {
+        outcomes.push(await choose('Category', category));
+      }
+      for (const [label, field] of [
+        ['Brand', 'brand'], ['Size', 'size'], ['Condition', 'condition'], ['Color', 'color'],
+        ['Source', 'source'], ['Age', 'age'], ['Style', 'style'], ['Package size', 'package'],
+      ]) outcomes.push(await choose(label, own(field).value.trim()));
+
+      if (price) { setValue(pageControl('Item price'), price); outcomes.push('Item price: filled'); }
+
+      const photos = own('photos').files;
+      if (photos.length) {
+        const target = [...document.querySelectorAll('input[type="file"]')].find((element) => !panel.contains(element));
+        if (!target) throw new Error('Photo input not found');
+        const transfer = new DataTransfer();
+        for (const photo of photos) transfer.items.add(photo);
+        target.files = transfer.files;
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        outcomes.push(`Photos: ${photos.length} supplied in selected order`);
+      }
+
+      result.textContent = `${outcomes.join('\n')}\n\nStopped before submission. Review every field.`;
+    } catch (error) {
+      result.textContent = `${outcomes.join('\n')}\n\nSTOPPED: ${error.message}`;
+    }
+  });
+}
+
 document.querySelector('#scan').addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -56,6 +153,16 @@ document.querySelector('#scan').addEventListener('click', async () => {
     copy.disabled = false;
   } catch (error) {
     output.textContent = `Scan failed: ${error.message}`;
+  }
+});
+
+document.querySelector('#fill').addEventListener('click', async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: openDryRunPanel });
+    window.close();
+  } catch (error) {
+    output.textContent = `Panel failed: ${error.message}`;
   }
 });
 
