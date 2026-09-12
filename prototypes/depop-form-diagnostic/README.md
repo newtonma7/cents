@@ -15,8 +15,7 @@ The diagnostic reports labels, field types, select option labels, and the page p
 ## Run the fill prototype
 
 1. Open the extension and choose **Open dry-run panel**.
-2. Enter disposable listing values. Combobox values must exactly match Depop's visible option text; category levels are separated with `>`.
-3. Select ordered JPEG/PNG photos.
-4. Choose **Fill, never submit**.
-5. Review the result and every populated Depop field. The prototype has no submission action.
-6. Return the displayed outcome plus any fields that were missing, wrong, or left unresolved.
+2. Enter broad Canonical Listing values and select ordered JPEG/PNG photos.
+3. Choose **Fill what matches**.
+4. Review the `FILLED`, `SUGGESTED`, `UNRESOLVED`, and `SKIPPED` results and every populated Depop field. One mismatch does not stop independent fields, and the prototype has no submission action.
+5. Return the displayed outcome plus any fields that were missing, wrong, or left unresolved.

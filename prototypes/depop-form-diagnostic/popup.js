@@ -52,20 +52,17 @@ function openDryRunPanel() {
   panel.innerHTML = `
     <button data-close style="float:right">Close</button>
     <h2 style="margin-top:0">Cents dry run</h2>
-    <p><strong>Never submits.</strong> Exact option text is required; uncertainty stops the fill.</p>
+    <p><strong>Never submits.</strong> Confident matches fill; everything else is skipped and reported.</p>
+    <label>Title<input data-field="title" style="display:block;width:100%"></label>
     <label>Description<textarea data-field="description" rows="4" style="display:block;width:100%"></textarea></label>
-    <label>Category path<input data-field="category" placeholder="Tops > T-shirts" style="display:block;width:100%"></label>
+    <label>Garment type<input data-field="garmentType" placeholder="tops" style="display:block;width:100%"></label>
     <label>Brand<input data-field="brand" style="display:block;width:100%"></label>
-    <label>Size<input data-field="size" style="display:block;width:100%"></label>
+    <label>Size label<input data-field="size" style="display:block;width:100%"></label>
     <label>Condition<input data-field="condition" placeholder="Good" style="display:block;width:100%"></label>
-    <label>Color<input data-field="color" style="display:block;width:100%"></label>
-    <label>Source<input data-field="source" style="display:block;width:100%"></label>
-    <label>Age<input data-field="age" style="display:block;width:100%"></label>
-    <label>Style<input data-field="style" style="display:block;width:100%"></label>
-    <label>Item price<input data-field="price" type="number" min="0" step="0.01" style="display:block;width:100%"></label>
-    <label>Package size<input data-field="package" style="display:block;width:100%"></label>
+    <label>Style keyword<input data-field="style" style="display:block;width:100%"></label>
+    <label>USD price<input data-field="price" type="number" min="0" step="0.01" style="display:block;width:100%"></label>
     <label>Ordered JPEG/PNG photos<input data-field="photos" type="file" accept="image/jpeg,image/png" multiple style="display:block;width:100%"></label>
-    <button data-fill style="margin-top:10px;padding:8px 12px">Fill, never submit</button>
+    <button data-fill style="margin-top:10px;padding:8px 12px">Fill what matches</button>
     <pre data-result style="white-space:pre-wrap;background:#f4f4f4;padding:8px"></pre>`;
   document.body.append(panel);
 
@@ -73,7 +70,7 @@ function openDryRunPanel() {
   const own = (name) => panel.querySelector(`[data-field="${name}"]`);
   const text = (element) => element?.textContent?.replace(/\s+/g, ' ').trim() || '';
   const visible = (element) => element.getClientRects().length > 0;
-  const pageControl = (label) => [...document.querySelectorAll('input,textarea,[role="combobox"]')]
+  const pageControl = (label) => [...document.querySelectorAll('input,select,textarea,[role="combobox"],[contenteditable="true"]')]
     .filter((element) => !panel.contains(element) && visible(element))
     .find((element) => {
       const explicit = element.id && document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
@@ -82,64 +79,93 @@ function openDryRunPanel() {
     });
 
   const setValue = (element, value) => {
-    if (!element) throw new Error('Field not found');
     const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, value);
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
   };
 
-  const choose = async (label, wanted) => {
-    if (!wanted) return `${label}: skipped`;
-    const control = pageControl(label);
-    if (!control) throw new Error(`${label}: control not found`);
+  const skipped = (source, target, reason) => ({ source, target, state: 'skipped', reason });
+  const fillText = (source, target, value) => {
+    if (!value) return skipped(source, target, 'Canonical value is empty');
+    const control = pageControl(target);
+    if (!control) return { source, target, state: 'unresolved', reason: 'Target control is not present' };
+    try {
+      setValue(control, value);
+      return control.value === value
+        ? { source, target, state: 'filled' }
+        : { source, target, state: 'unresolved', reason: 'Page did not retain the value' };
+    } catch (error) {
+      return { source, target, state: 'unresolved', reason: error.message };
+    }
+  };
+
+  const choose = async (source, target, wanted) => {
+    if (!wanted) return skipped(source, target, 'Canonical value is empty');
+    const control = pageControl(target);
+    if (!control) return { source, target, state: 'unresolved', proposedValue: wanted, reason: 'Target control is not present' };
     control.click();
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const options = [...document.querySelectorAll('[role="option"], [role="listbox"] li')]
       .filter((element) => !panel.contains(element) && visible(element));
     const exact = options.filter((element) => text(element).toLowerCase() === wanted.trim().toLowerCase());
     if (exact.length !== 1) {
-      const available = options.map(text).filter(Boolean).slice(0, 12).join(', ');
-      throw new Error(`${label}: expected one exact “${wanted}” option; found ${exact.length}. Visible: ${available || 'none'}`);
+      const available = options.map(text).filter(Boolean).slice(0, 12);
+      return {
+        source,
+        target,
+        state: available.length ? 'suggested' : 'unresolved',
+        proposedValue: wanted,
+        reason: available.length ? `No unique exact match. Visible options: ${available.join(', ')}` : 'No visible options',
+      };
     }
     exact[0].click();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    return `${label}: ${wanted}`;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return { source, target, state: 'filled' };
   };
+
+  const line = (outcome) => `${outcome.state.toUpperCase()} ${outcome.source}${outcome.target ? ` → ${outcome.target}` : ''}${outcome.reason ? `: ${outcome.reason}` : ''}`;
 
   panel.querySelector('[data-close]').addEventListener('click', () => panel.remove());
   panel.querySelector('[data-fill]').addEventListener('click', async () => {
-    const outcomes = [];
-    try {
-      const description = own('description').value.trim();
-      const price = own('price').value.trim();
-      if (description) { setValue(pageControl('Description'), description); outcomes.push('Description: filled'); }
+    const outcomes = [skipped('Title', undefined, 'Depop has no title control')];
+    outcomes.push(fillText('Description', 'Description', own('description').value.trim()));
+    outcomes.push(await choose('Garment type', 'Category', own('garmentType').value.trim()));
+    outcomes.push(await choose('Brand', 'Brand', own('brand').value.trim()));
+    outcomes.push(await choose('Size label', 'Size', own('size').value.trim()));
+    outcomes.push(await choose('Condition', 'Condition', own('condition').value.trim()));
+    outcomes.push(await choose('Style keyword', 'Style', own('style').value.trim()));
+    outcomes.push(fillText('USD price', 'Item price', own('price').value.trim()));
 
-      for (const category of own('category').value.split('>').map((part) => part.trim()).filter(Boolean)) {
-        outcomes.push(await choose('Category', category));
+    const photos = own('photos').files;
+    if (!photos.length) {
+      outcomes.push(skipped('Photos', 'Add a photo', 'No photos selected'));
+    } else {
+      const target = pageControl('Add a photo');
+      if (!(target instanceof HTMLInputElement) || target.type !== 'file') {
+        outcomes.push({ source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: 'Photo input is not present' });
+      } else {
+        try {
+          const transfer = new DataTransfer();
+          for (const photo of photos) transfer.items.add(photo);
+          target.files = transfer.files;
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          outcomes.push(target.files.length === photos.length
+            ? { source: 'Photos', target: 'Add a photo', state: 'filled', reason: `${photos.length} supplied; verify preview order` }
+            : { source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: 'Page did not retain every photo' });
+        } catch (error) {
+          outcomes.push({ source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: error.message });
+        }
       }
-      for (const [label, field] of [
-        ['Brand', 'brand'], ['Size', 'size'], ['Condition', 'condition'], ['Color', 'color'],
-        ['Source', 'source'], ['Age', 'age'], ['Style', 'style'], ['Package size', 'package'],
-      ]) outcomes.push(await choose(label, own(field).value.trim()));
-
-      if (price) { setValue(pageControl('Item price'), price); outcomes.push('Item price: filled'); }
-
-      const photos = own('photos').files;
-      if (photos.length) {
-        const target = [...document.querySelectorAll('input[type="file"]')].find((element) => !panel.contains(element));
-        if (!target) throw new Error('Photo input not found');
-        const transfer = new DataTransfer();
-        for (const photo of photos) transfer.items.add(photo);
-        target.files = transfer.files;
-        target.dispatchEvent(new Event('change', { bubbles: true }));
-        outcomes.push(`Photos: ${photos.length} supplied in selected order`);
-      }
-
-      result.textContent = `${outcomes.join('\n')}\n\nStopped before submission. Review every field.`;
-    } catch (error) {
-      result.textContent = `${outcomes.join('\n')}\n\nSTOPPED: ${error.message}`;
     }
+
+    outcomes.push(skipped('Color', 'Color', 'Not represented by the Canonical Listing'));
+    outcomes.push(skipped('Source', 'Source', 'No Canonical Listing value'));
+    outcomes.push(skipped('Age', 'Age', 'No Canonical Listing value'));
+    outcomes.push(skipped('Package size', 'Package size', 'No Canonical Listing value'));
+    result.textContent = `${outcomes.map(line).join('\n')}\n\nNever submitted. Review filled fields and complete every alert manually.`;
   });
 }
 
