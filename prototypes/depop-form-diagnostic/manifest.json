@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Cents Depop Form Diagnostic (Throwaway)",
+  "version": "0.0.1",
+  "description": "Reports form metadata without reading entered values.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
