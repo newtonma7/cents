@@ -133,7 +133,9 @@ function openDryRunPanel() {
     outcomes.push(await choose('Garment type', 'Category', own('garmentType').value.trim()));
     outcomes.push(await choose('Brand', 'Brand', own('brand').value.trim()));
     outcomes.push(await choose('Size label', 'Size', own('size').value.trim()));
-    outcomes.push(await choose('Condition', 'Condition', own('condition').value.trim()));
+    const condition = own('condition').value.trim();
+    const depopCondition = { good: 'Used - Good', fair: 'Used - Fair' }[condition.toLowerCase()] || condition;
+    outcomes.push(await choose('Condition', 'Condition', depopCondition));
     outcomes.push(await choose('Style keyword', 'Style', own('style').value.trim()));
     outcomes.push(fillText('USD price', 'Item price', own('price').value.trim()));
 
@@ -146,15 +148,34 @@ function openDryRunPanel() {
         outcomes.push({ source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: 'Photo input is not present' });
       } else {
         try {
+          const dropZone = target.closest('label') || target.parentElement;
+          const previewCount = () => dropZone.querySelectorAll('img,[style*="background-image"]').length;
+          const before = previewCount();
+          let mutations = 0;
+          const observer = new MutationObserver((records) => { mutations += records.length; });
+          observer.observe(dropZone, { childList: true, subtree: true, attributes: true });
+
           const transfer = new DataTransfer();
           for (const photo of photos) transfer.items.add(photo);
           target.files = transfer.files;
           target.dispatchEvent(new Event('input', { bubbles: true }));
           target.dispatchEvent(new Event('change', { bubbles: true }));
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          outcomes.push(target.files.length === photos.length
-            ? { source: 'Photos', target: 'Add a photo', state: 'filled', reason: `${photos.length} supplied; verify preview order` }
-            : { source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: 'Page did not retain every photo' });
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+
+          if (previewCount() === before && mutations === 0) {
+            for (const type of ['dragenter', 'dragover', 'drop']) {
+              dropZone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1800));
+          }
+
+          observer.disconnect();
+          const visiblePreviews = previewCount() - before;
+          outcomes.push(visiblePreviews > 0
+            ? { source: 'Photos', target: 'Add a photo', state: 'filled', reason: `${visiblePreviews} new preview(s); verify count and order` }
+            : mutations > 0
+              ? { source: 'Photos', target: 'Add a photo', state: 'suggested', reason: 'The upload area changed but no preview was verified; complete manually' }
+              : { source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: 'Depop showed no upload or preview response; complete manually' });
         } catch (error) {
           outcomes.push({ source: 'Photos', target: 'Add a photo', state: 'unresolved', reason: error.message });
         }
