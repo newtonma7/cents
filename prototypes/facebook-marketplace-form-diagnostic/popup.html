@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Facebook Marketplace prototype</title>
+  <style>
+    body { font: 14px system-ui; margin: 12px; width: 420px; }
+    button { margin: 0 6px 8px 0; padding: 8px 12px; }
+    pre { background: #f4f4f4; max-height: 420px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Facebook Marketplace prototype</h1>
+  <p>Scans metadata or opens a dry-run fill panel. It never submits.</p>
+  <button id="scan">Scan this page</button>
+  <button id="copy" disabled>Copy JSON</button>
+  <button id="fill">Open dry-run panel</button>
+  <pre id="output">Open Facebook Marketplace’s create-item page.</pre>
+  <script src="popup.js"></script>
+</body>
+</html>

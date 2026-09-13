@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Cents Facebook Marketplace Form Diagnostic (Throwaway)",
+  "version": "0.0.1",
+  "description": "Reports form metadata without reading entered values.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1:8765/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": [
+      "https://www.facebook.com/marketplace/create/item",
+      "https://www.facebook.com/marketplace/create/item/*"
+    ],
+    "js": ["scan.js"],
+    "run_at": "document_idle"
+  }],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
