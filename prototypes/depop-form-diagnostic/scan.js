@@ -51,7 +51,11 @@
     const result = scanForm();
     assertSafe(result);
     if (!result.controls.length) return;
-    chrome.runtime.sendMessage({ type: 'depop-form-report', report: result }).catch(() => {});
+    try {
+      chrome.runtime.sendMessage({ type: 'depop-form-report', report: result }).catch(() => {});
+    } catch {
+      // Reloading the extension invalidates content scripts already running in open tabs.
+    }
   };
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

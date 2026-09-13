@@ -43,7 +43,7 @@ The diagnostic reports labels, field types, select option labels, and the page p
 ## Checks
 
 ```sh
-python3 -m unittest -v test_receiver.py
+python3 -B -m unittest -v test_receiver.py
 python3 -m json.tool manifest.json >/dev/null
 node --check scan.js && node --check background.js && node --check route.js && node --check popup.js
 node test_routes.js
