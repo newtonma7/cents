@@ -16,7 +16,6 @@ export function DraftForm({ id }: { id: string }) {
       <input
         autoComplete="off"
         id="title"
-        maxLength={160}
         name="title"
         value={title}
         onChange={(event) => setTitle(event.target.value)}
@@ -24,7 +23,6 @@ export function DraftForm({ id }: { id: string }) {
       <label htmlFor="description">Description</label>
       <textarea
         id="description"
-        maxLength={5000}
         name="description"
         rows={7}
         value={description}

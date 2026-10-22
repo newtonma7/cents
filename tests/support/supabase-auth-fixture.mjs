@@ -8,6 +8,7 @@ const refreshTokens = new Map();
 const sellers = new Map();
 const listings = new Map();
 let messageNumber = 0;
+let nextInsertFault = null;
 
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -106,6 +107,13 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/test/fault" && request.method === "POST") {
+    const body = await readJson(request);
+    nextInsertFault = body.mode;
+    json(response, 200, {});
+    return;
+  }
+
   if (url.pathname === "/test/inbox" && request.method === "GET") {
     const message = messages.get(url.searchParams.get("email"));
     if (!message) {
@@ -160,6 +168,12 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST") {
       const body = await readJson(request);
+      const fault = nextInsertFault;
+      nextInsertFault = null;
+      if (fault === "before-commit") {
+        json(response, 503, { message: "Temporary insert failure" });
+        return;
+      }
       if (listings.has(body.id)) {
         json(response, 409, { code: "23505", message: "Duplicate listing" });
         return;
@@ -176,11 +190,15 @@ const server = createServer(async (request, response) => {
         condition: null,
         brand: null,
         price_usd_cents: null,
-        revision: 1,
+        revision: fault === "invalid-unrelated" ? 0 : 1,
         created_at: now,
         updated_at: now,
       };
       listings.set(body.id, listing);
+      if (fault === "after-commit") {
+        response.destroy();
+        return;
+      }
       response.writeHead(201).end();
       return;
     }
@@ -198,7 +216,11 @@ const server = createServer(async (request, response) => {
         json(response, 406, { code: "PGRST116", message: "No rows found" });
         return;
       }
-      json(response, 200, acceptsObject ? selected[0] : selected);
+      const columns = url.searchParams.get("select")?.split(",");
+      const rows = columns
+        ? selected.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])))
+        : selected;
+      json(response, 200, acceptsObject ? rows[0] : rows);
       return;
     }
   }

@@ -14,7 +14,7 @@ npm run dev
 
 Set the public Supabase project URL and publishable/anonymous key in `.env.local`. Keep service-role and database credentials server-only; this application does not need them for authentication.
 
-Apply `supabase/migrations/20260318000000_create_canonical_listings.sql` to the Supabase project before using the listing pages. The migration creates the owner-scoped `canonical_listings` table and grants authenticated sellers read and insert access only.
+Apply `supabase/migrations/20261022000000_create_canonical_listings.sql` to the Supabase project before using the listing pages. The migration creates the owner-scoped `canonical_listings` table and grants authenticated sellers read and insert access only. Titles are limited to 160 Unicode code points and descriptions to 5,000 Unicode code points. The form trims surrounding whitespace, and the server and database enforce these limits using the same character-counting rules.
 
 In Supabase Auth:
 
