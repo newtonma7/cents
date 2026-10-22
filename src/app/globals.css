@@ -34,6 +34,7 @@ a {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -64,7 +65,9 @@ button:active,
 
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
   outline: 3px solid #d99f36;
   outline-offset: 3px;
 }
@@ -357,12 +360,26 @@ input:focus-visible {
   margin-top: 2rem;
 }
 
+.draft-form fieldset {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+}
+
+.draft-form legend {
+  font-weight: 700;
+}
+
 .draft-form label {
   font-size: 0.9rem;
   font-weight: 700;
 }
 
 .draft-form input,
+.draft-form select,
 .draft-form textarea {
   width: 100%;
   padding: 0.8rem 0.95rem;

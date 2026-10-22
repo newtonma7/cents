@@ -8,7 +8,8 @@ const refreshTokens = new Map();
 const sellers = new Map();
 const listings = new Map();
 let messageNumber = 0;
-let nextInsertFault = null;
+let nextMutationFault = null;
+let nextReadFaults = 0;
 
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -109,7 +110,8 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/test/fault" && request.method === "POST") {
     const body = await readJson(request);
-    nextInsertFault = body.mode;
+    if (body.mode === "read-failure") nextReadFaults = 1;
+    else nextMutationFault = body.mode;
     json(response, 200, {});
     return;
   }
@@ -168,8 +170,8 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST") {
       const body = await readJson(request);
-      const fault = nextInsertFault;
-      nextInsertFault = null;
+      const fault = nextMutationFault;
+      nextMutationFault = null;
       if (fault === "before-commit") {
         json(response, 503, { message: "Temporary insert failure" });
         return;
@@ -184,12 +186,12 @@ const server = createServer(async (request, response) => {
         seller_id: seller.id,
         title: body.title,
         description: body.description,
-        garment_type: null,
-        size_system: null,
-        size_label: null,
-        condition: null,
-        brand: null,
-        price_usd_cents: null,
+        garment_type: body.garment_type,
+        size_system: body.size_system,
+        size_label: body.size_label,
+        condition: body.condition,
+        brand: body.brand,
+        price_usd_cents: body.price_usd_cents,
         revision: fault === "invalid-unrelated" ? 0 : 1,
         created_at: now,
         updated_at: now,
@@ -203,7 +205,44 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "PATCH") {
+      const body = await readJson(request);
+      const fault = nextMutationFault;
+      nextMutationFault = null;
+      if (fault === "before-commit") {
+        json(response, 503, { message: "Temporary update failure" });
+        return;
+      }
+      const id = url.searchParams.get("id")?.replace(/^eq\./, "");
+      const revision = url.searchParams.get("revision")?.replace(/^eq\./, "");
+      const sellerId = url.searchParams.get("seller_id")?.replace(/^eq\./, "");
+      const listing = listings.get(id);
+      const editable = ["title", "description", "garment_type", "size_system", "size_label", "condition", "brand", "price_usd_cents"];
+      if (Object.keys(body).some((key) => !editable.includes(key))) {
+        json(response, 403, { message: "Column permission denied" });
+        return;
+      }
+      if (!listing || listing.seller_id !== seller.id || (sellerId && sellerId !== seller.id) || (revision && listing.revision !== Number(revision))) {
+        json(response, 200, []);
+        return;
+      }
+      Object.assign(listing, body, { revision: listing.revision + 1, updated_at: new Date().toISOString() });
+      if (fault === "after-commit" || fault === "after-commit-unreadable") {
+        if (fault === "after-commit-unreadable") nextReadFaults = 1;
+        response.destroy();
+        return;
+      }
+      const columns = url.searchParams.get("select")?.split(",").map((column) => column.trim());
+      json(response, 200, [columns ? Object.fromEntries(columns.map((column) => [column, listing[column]])) : listing]);
+      return;
+    }
+
     if (request.method === "GET") {
+      if (nextReadFaults > 0) {
+        nextReadFaults--;
+        json(response, 400, { message: "Injected read failure" });
+        return;
+      }
       const requestedId = url.searchParams.get("id")?.replace(/^eq\./, "");
       const owned = [...listings.values()].filter(
         (listing) => listing.seller_id === seller.id,
@@ -216,7 +255,7 @@ const server = createServer(async (request, response) => {
         json(response, 406, { code: "PGRST116", message: "No rows found" });
         return;
       }
-      const columns = url.searchParams.get("select")?.split(",");
+      const columns = url.searchParams.get("select")?.split(",").map((column) => column.trim());
       const rows = columns
         ? selected.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])))
         : selected;

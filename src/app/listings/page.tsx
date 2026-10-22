@@ -21,9 +21,9 @@ export default async function ListingsPage() {
             <h1 id="listings-heading">Canonical Listings</h1>
             <p>Prepare one Canonical Listing, then take it to every marketplace.</p>
           </div>
-          <Link className="primary-link" href="/listings/new">
+          <a className="primary-link" href="/listings/new">
             Create Canonical Listing
-          </Link>
+          </a>
         </div>
         {listings.length === 0 ? (
           <div className="empty-state">
@@ -38,7 +38,7 @@ export default async function ListingsPage() {
             {listings.map((listing) => (
               <li className="listing-card" key={listing.id}>
                 <p className="eyebrow">Draft</p>
-                <h2>{listing.title || "Untitled listing"}</h2>
+                <h2><a href={`/listings/${listing.id}`}>{listing.title || "Untitled listing"}</a></h2>
                 {listing.description ? <p>{listing.description}</p> : null}
               </li>
             ))}
