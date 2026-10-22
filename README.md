@@ -14,6 +14,8 @@ npm run dev
 
 Set the public Supabase project URL and publishable/anonymous key in `.env.local`. Keep service-role and database credentials server-only; this application does not need them for authentication.
 
+Apply `supabase/migrations/20260318000000_create_canonical_listings.sql` to the Supabase project before using the listing pages. The migration creates the owner-scoped `canonical_listings` table and grants authenticated sellers read and insert access only.
+
 In Supabase Auth:
 
 1. Enable email signup.
@@ -33,4 +35,4 @@ npm test
 npm run build
 ```
 
-`npm test` runs the browser-level Seller signup flow against a deterministic local Supabase Auth fixture. It needs no Docker instance or hosted Supabase credentials.
+`npm test` runs browser-level Seller signup and listing flows against a deterministic local Supabase fixture. It checks draft creation, owner-filtered dashboard reads, and persistence across reloads. The fixture does not run PostgreSQL or prove the hosted migration and row-level security policies. Verify those against the Supabase project before enabling listing creation for sellers.

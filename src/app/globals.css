@@ -33,7 +33,8 @@ a {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -329,13 +330,91 @@ input:focus-visible {
   color: var(--muted);
 }
 
-.placeholder-card {
-  width: min(42rem, calc(100% - 2rem));
-  margin: 6rem auto;
-  padding: 3rem;
+.draft-card {
+  max-width: 42rem;
+  margin: 1.5rem auto 0;
+  padding: clamp(1.5rem, 5vw, 3rem);
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--card);
+}
+
+.draft-card h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+}
+
+.draft-card > p:not(.eyebrow) {
+  color: var(--muted);
+}
+
+.draft-form {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 2rem;
+}
+
+.draft-form label {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.draft-form input,
+.draft-form textarea {
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid #b8b8ae;
+  border-radius: 0.6rem;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.draft-form textarea {
+  resize: vertical;
+}
+
+.draft-form button {
+  margin-top: 0.5rem;
+}
+
+.listing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+  margin: 3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listing-card {
+  min-width: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--card);
+}
+
+.listing-card .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
+.listing-card h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.listing-card > p:last-child {
+  color: var(--muted);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 800px) {

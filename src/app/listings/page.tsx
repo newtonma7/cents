@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { listDrafts } from "@/lib/listings/server";
 import { requireSeller } from "@/lib/supabase/require-seller";
 
 export default async function ListingsPage() {
   const seller = await requireSeller();
+  const listings = await listDrafts();
 
   return (
     <main className="workspace-shell">
@@ -23,13 +25,25 @@ export default async function ListingsPage() {
             Create Canonical Listing
           </Link>
         </div>
-        <div className="empty-state">
-          <div className="empty-icon" aria-hidden="true">
-            +
+        {listings.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon" aria-hidden="true">
+              +
+            </div>
+            <h2>No Canonical Listings yet.</h2>
+            <p>Create your first Canonical Listing to get started.</p>
           </div>
-          <h2>No Canonical Listings yet.</h2>
-          <p>Create your first Canonical Listing to get started.</p>
-        </div>
+        ) : (
+          <ul className="listing-grid" aria-label="Your Canonical Listings">
+            {listings.map((listing) => (
+              <li className="listing-card" key={listing.id}>
+                <p className="eyebrow">Draft</p>
+                <h2>{listing.title || "Untitled listing"}</h2>
+                {listing.description ? <p>{listing.description}</p> : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );

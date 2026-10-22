@@ -6,6 +6,7 @@ const pendingTokens = new Map();
 const accessTokens = new Map();
 const refreshTokens = new Map();
 const sellers = new Map();
+const listings = new Map();
 let messageNumber = 0;
 
 function json(response, status, body) {
@@ -148,6 +149,58 @@ const server = createServer(async (request, response) => {
     pendingTokens.delete(body.token_hash);
     json(response, 200, sessionFor(sellerFor(email)));
     return;
+  }
+
+  if (url.pathname === "/rest/v1/canonical_listings") {
+    const seller = accessTokens.get(bearerToken(request));
+    if (!seller) {
+      json(response, 401, { message: "Invalid token" });
+      return;
+    }
+
+    if (request.method === "POST") {
+      const body = await readJson(request);
+      if (listings.has(body.id)) {
+        json(response, 409, { code: "23505", message: "Duplicate listing" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const listing = {
+        id: body.id,
+        seller_id: seller.id,
+        title: body.title,
+        description: body.description,
+        garment_type: null,
+        size_system: null,
+        size_label: null,
+        condition: null,
+        brand: null,
+        price_usd_cents: null,
+        revision: 1,
+        created_at: now,
+        updated_at: now,
+      };
+      listings.set(body.id, listing);
+      response.writeHead(201).end();
+      return;
+    }
+
+    if (request.method === "GET") {
+      const requestedId = url.searchParams.get("id")?.replace(/^eq\./, "");
+      const owned = [...listings.values()].filter(
+        (listing) => listing.seller_id === seller.id,
+      );
+      const selected = requestedId
+        ? owned.filter((listing) => listing.id === requestedId)
+        : owned.sort((left, right) => right.created_at.localeCompare(left.created_at));
+      const acceptsObject = request.headers.accept?.includes("vnd.pgrst.object");
+      if (acceptsObject && selected.length === 0) {
+        json(response, 406, { code: "PGRST116", message: "No rows found" });
+        return;
+      }
+      json(response, 200, acceptsObject ? selected[0] : selected);
+      return;
+    }
   }
 
   if (url.pathname === "/auth/v1/user" && request.method === "GET") {
