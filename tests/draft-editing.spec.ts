@@ -318,8 +318,8 @@ for (const mode of ["after-commit", "after-commit-unreadable"]) {
 test("client response loss preserves edits and retry recovers only the immediate successor", async ({ page, request }) => {
   const id = await createAndOpen(page, request);
   await page.getByLabel("Title", { exact: true }).fill("Committed but unacknowledged");
-  await page.route(`**/listings/${id}`, async (route) => {
-    if (route.request().method() === "POST") {
+  await page.route(`**/api/listings/${id}`, async (route) => {
+    if (route.request().method() === "PUT") {
       await route.fetch();
       await route.abort("failed");
     } else await route.continue();
@@ -328,7 +328,7 @@ test("client response loss preserves edits and retry recovers only the immediate
   await expect(page.locator("form").getByRole("alert")).toContainText("We could not save this draft");
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Committed but unacknowledged");
   await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
-  await page.unroute(`**/listings/${id}`);
+  await page.unroute(`**/api/listings/${id}`);
   await saveEdit(page, 2);
   await page.reload();
   await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
@@ -358,8 +358,8 @@ test("a pending save disables every editable field", async ({ page, request }) =
   let release = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
   const dispatched = new Promise<void>((resolve) => {
-    void page.route(`**/listings/${id}`, async (route) => {
-      if (route.request().method() === "POST") { resolve(); await gate; }
+    void page.route(`**/api/listings/${id}`, async (route) => {
+      if (route.request().method() === "PUT") { resolve(); await gate; }
       await route.continue();
     });
   });
@@ -375,10 +375,17 @@ test("a pending save disables every editable field", async ({ page, request }) =
 });
 
 test("a detail read failure is an infrastructure error, not a missing draft", async ({ page, request }) => {
-  await createAndOpen(page, request);
-  await fault(request, "read-failure");
-  const response = await page.reload();
-  expect(response?.status()).toBe(500);
+  const id = await createAndOpen(page, request);
+  await request.post(`${fixtureUrl}/test/fault`, { data: { mode: "read-failure", count: 10 } });
+  try {
+    const apiResponse = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/listings/${id}`);
+    const response = await page.reload();
+    expect(response?.status()).toBe(200);
+    expect((await apiResponse).status()).toBe(503);
+    await expect(page.locator("main").getByRole("alert")).toContainText("We could not load this page");
+  } finally {
+    await fault(request, "clear-read-failure");
+  }
 });
 
 test("a signed-out save keeps unsaved fields without writing", async ({ page, request }) => {
@@ -403,12 +410,15 @@ test("foreign, absent, invalid and signed-out detail access is denied; foreign u
   const id = await createAndOpen(page, request);
   const outsiderContext = await browser.newContext();
   const outsider = await outsiderContext.newPage();
+  expect((await outsiderContext.request.get(`/api/listings/${id}`)).status()).toBe(401);
   await outsider.goto(`/listings/${id}`);
   await expect(outsider).toHaveURL("/");
   await signIn(outsider, request);
   for (const deniedId of [id, randomUUID(), "not-a-uuid"]) {
     const response = await outsider.goto(`/listings/${deniedId}`);
-    expect(response?.status()).toBe(404);
+    expect(response?.status()).toBe(200);
+    expect((await outsiderContext.request.get(`/api/listings/${deniedId}`)).status()).toBe(404);
+    await expect(outsider.getByRole("heading", { name: "This page could not be found." })).toBeVisible();
     await expect(outsider.getByLabel("Title", { exact: true })).toHaveCount(0);
   }
   await outsider.goto("/listings");

@@ -10,9 +10,15 @@ const listings = new Map();
 let messageNumber = 0;
 let nextMutationFault = null;
 let nextReadFaults = 0;
+let nextSessionMode = null;
+let authFault = null;
+const refreshedSessions = new Map();
 
 function json(response, status, body) {
-  response.writeHead(status, { "content-type": "application/json" });
+  if (status >= 400 && body && typeof body.message === "string") {
+    body = { ...body, message: body.message + " private-provider-payload" };
+  }
+  response.writeHead(status, { "content-type": "application/json", "x-supabase-api-version": "2024-01-01" });
   response.end(JSON.stringify(body));
 }
 
@@ -65,13 +71,15 @@ function sellerFor(email) {
   return seller;
 }
 
-function sessionFor(seller) {
+function sessionFor(seller, mode = null) {
+  if (mode === "expired-chunked") seller = { ...seller, user_metadata: { ...seller.user_metadata, padding: "x".repeat(8000) } };
+  const lifetime = mode?.startsWith("expired") ? -60 : 3600;
   const now = Math.floor(Date.now() / 1000);
   const accessToken = [
     base64url({ alg: "HS256", typ: "JWT" }),
     base64url({
       aud: "authenticated",
-      exp: now + 3600,
+      exp: now + lifetime,
       iat: now,
       iss: "http://127.0.0.1:54321/auth/v1",
       role: "authenticated",
@@ -88,8 +96,8 @@ function sessionFor(seller) {
   return {
     access_token: accessToken,
     token_type: "bearer",
-    expires_in: 3600,
-    expires_at: now + 3600,
+    expires_in: lifetime,
+    expires_at: now + lifetime,
     refresh_token: refreshToken,
     user: seller,
   };
@@ -110,8 +118,17 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/test/fault" && request.method === "POST") {
     const body = await readJson(request);
-    if (body.mode === "read-failure") nextReadFaults = 1;
+    if (body.mode === "read-failure") nextReadFaults = body.count ?? 1;
+    else if (body.mode === "clear-read-failure") nextReadFaults = 0;
     else nextMutationFault = body.mode;
+    json(response, 200, {});
+    return;
+  }
+
+  if (url.pathname === "/test/auth" && request.method === "POST") {
+    const body = await readJson(request);
+    nextSessionMode = body.session ?? null;
+    authFault = body.fault ?? null;
     json(response, 200, {});
     return;
   }
@@ -127,6 +144,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/auth/v1/otp" && request.method === "POST") {
+    if (authFault === "otp-outage") { json(response, 503, { message: "Temporary outage" }); return; }
     const body = await readJson(request);
     const email = body.email;
     if (typeof email !== "string") {
@@ -149,6 +167,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/auth/v1/verify" && request.method === "POST") {
+    if (authFault === "verify-outage") { json(response, 503, { message: "Temporary outage" }); return; }
     const body = await readJson(request);
     const email = pendingTokens.get(body.token_hash);
     if (!email || body.type !== "email") {
@@ -157,7 +176,9 @@ const server = createServer(async (request, response) => {
     }
 
     pendingTokens.delete(body.token_hash);
-    json(response, 200, sessionFor(sellerFor(email)));
+    const mode = nextSessionMode;
+    nextSessionMode = null;
+    json(response, 200, sessionFor(sellerFor(email), mode));
     return;
   }
 
@@ -265,6 +286,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/auth/v1/user" && request.method === "GET") {
+    if (authFault === "user-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    if (authFault === "user-invalid") { json(response, 401, { code: "bad_jwt", message: "Invalid token" }); return; }
     const seller = accessTokens.get(bearerToken(request));
     if (!seller) {
       json(response, 401, { message: "Invalid token" });
@@ -280,12 +303,20 @@ const server = createServer(async (request, response) => {
     request.method === "POST"
   ) {
     const body = await readJson(request);
+    if (authFault === "refresh-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    if (authFault === "refresh-rate-limit") { json(response, 429, { message: "Rate limited" }); return; }
+    if (authFault === "refresh-unknown-outage") { json(response, 507, { message: "Temporary infrastructure error" }); return; }
+    if (authFault === "refresh-invalid") { json(response, 400, { code: "refresh_token_not_found", message: "Invalid refresh token" }); return; }
+    const previous = refreshedSessions.get(body.refresh_token);
+    if (previous) { json(response, 200, previous); return; }
     const seller = refreshTokens.get(body.refresh_token);
     if (!seller) {
       json(response, 401, { message: "Invalid refresh token" });
       return;
     }
-    json(response, 200, sessionFor(seller));
+    const session = sessionFor(sellers.get(seller.email));
+    refreshedSessions.set(body.refresh_token, session);
+    json(response, 200, session);
     return;
   }
 

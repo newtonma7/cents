@@ -5,12 +5,31 @@ import nextTs from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
+  { settings: { next: { rootDir: "apps/web/" } } },
   {
-    files: ["src/app/listings/page.tsx", "src/app/listings/*/page.tsx"],
-    // Document navigation lets beforeunload protect dirty drafts, including browser Back.
+    files: ["apps/api/**/*.ts"],
+    rules: { "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }] },
+  },
+  {
+    files: ["apps/web/**/*.{ts,tsx,js,jsx,mjs}"],
     rules: {
-      "@next/next/no-html-link-for-pages": "off",
+      "no-restricted-imports": ["error", {
+        paths: ["server-only", "next/headers", "next/server"],
+        patterns: ["@supabase/*", "@cents/api", "@cents/api/*", "**/apps/api/**", "**/api/src/**", "**/supabase/**", "@/lib/listings/server"],
+      }],
+      "no-restricted-syntax": ["error", {
+        selector: "ExpressionStatement[directive='use server']",
+        message: "Server Actions belong in the Express API, not the frontend.",
+      }],
     },
   },
-  globalIgnores([".next/**", "playwright-report/**", "test-results/**", "next-env.d.ts"]),
+  {
+    files: ["packages/contracts/src/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: ["@supabase/*", "@cents/api", "@cents/api/*", "next", "next/*", "react", "node:*", "**/apps/**"] }] },
+  },
+  {
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+    rules: { "@next/next/no-html-link-for-pages": "off" },
+  },
+  globalIgnores(["**/.next/**", "**/dist/**", "playwright-report/**", "test-results/**", "**/next-env.d.ts"]),
 ]);

@@ -1,5 +1,7 @@
 # Cross-Platform Clothing Listing Automation Implementation Plan
 
+This is an early proposal, not the current implementation contract. The current application uses an independent Express API, a Next frontend, and Supabase Auth and database. See [the API reference](api.md) and [the current setup](../README.md). The Prisma and Next API recommendations below are historical.
+
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
 **Goal:** Build a centralized listing system where one normalized clothing listing can be drafted once, then published and synchronized across supported marketplaces.

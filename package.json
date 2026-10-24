@@ -2,29 +2,35 @@
   "name": "cents",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "playwright test"
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
   },
-  "dependencies": {
-    "@supabase/ssr": "0.12.7",
-    "@supabase/supabase-js": "2.117.2",
-    "next": "16.3.6",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "zod": "4.6.5"
+  "scripts": {
+    "dev": "npm run build -w @cents/contracts && concurrently -k -n contracts,api,web \"npm run dev -w @cents/contracts\" \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev -w @cents/api",
+    "dev:web": "npm run dev -w @cents/web",
+    "build": "npm run build -w @cents/contracts && npm run build:api && npm run build:web",
+    "build:api": "npm run build -w @cents/contracts && npm run build -w @cents/api",
+    "build:web": "npm run build -w @cents/contracts && npm run build -w @cents/web",
+    "start": "concurrently -k -n api,web \"npm run start:api\" \"npm run start:web\"",
+    "start:api": "npm run start -w @cents/api",
+    "start:web": "npm run start -w @cents/web",
+    "lint": "eslint .",
+    "typecheck": "npm run build -w @cents/contracts && npm run typecheck --workspaces --if-present && tsc --noEmit",
+    "test": "npm run build -w @cents/contracts && playwright test",
+    "test:production": "npm run build && CENTS_TEST_PRODUCTION=1 npm test",
+    "test:api": "npm run build:api && CENTS_TEST_API_ONLY=1 CENTS_TEST_PRODUCTION=1 playwright test tests/api-*.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/node": "^24",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "concurrently": "^9.2.1"
   }
 }

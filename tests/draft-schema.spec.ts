@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   conditions, draftFormSchema, emptyDraftInput, garmentTypes, sizeSystems,
-} from "../src/lib/listings/draft";
+} from "@cents/contracts";
 
 const migrations = [
   "supabase/migrations/20261022000000_create_canonical_listings.sql",
