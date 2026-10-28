@@ -1,0 +1,23 @@
+{
+  "name": "@cents/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cents/contracts": "*",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
+    "cookie": "^1.0.2",
+    "express": "^5.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5",
+    "tsx": "^4.20.6"
+  }
+}
