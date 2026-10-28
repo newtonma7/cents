@@ -24,7 +24,7 @@ export function listingRoutes(config: ApiConfig) {
     const fields = draftFormSchema.safeParse(command.data.fields);
     if (!fields.success) throw new HttpError(422, invalidFieldsMessage);
     const result = await createDraft(session, { id: command.data.id, fields: fields.data });
-    res.status(result.kind === "created" ? 201 : 503).json(result);
+    res.status(result.kind === "created" ? 201 : result.kind === "conflict" ? 409 : 503).json(result);
   });
   router.put("/:id", async (req, res) => {
     const session = await requireSession(req, res, config);

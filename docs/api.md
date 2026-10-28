@@ -27,7 +27,7 @@ All private responses and callbacks use `Cache-Control: no-store`. Responses con
 
 A Snapshot contains `id`, parsed nullable `fields`, `revision`, `createdAt`, and `updatedAt`. The price in those parsed fields is `price_usd_cents`, an integer or null. Editable DTOs reject injected owner, revision, timestamp, and storage-cent properties.
 
-Creation uses a stable client-generated UUID. A retry that finds that Seller's existing UUID acknowledges creation without overwriting it. Editing uses an atomic expected-revision update. An ambiguous response recovers success only if the current row is the immediate successor and every submitted field matches. Matching fields two revisions later still produce a conflict.
+Creation uses a stable client-generated UUID. A retry acknowledges creation only when that Seller's existing UUID is still at revision 1 and all persisted fields match the submitted fields. Different fields or a later revision return a conflict without overwriting anything. The create form retains unsaved input and offers a link to the saved draft; leaving unsaved input still requires the browser's discard confirmation. Editing uses an atomic expected-revision update. An ambiguous response recovers success only if the current row is the immediate successor and every submitted field matches. Matching fields two revisions later still produce a conflict.
 
 ## Errors and page shells
 
@@ -37,7 +37,7 @@ Creation uses a stable client-generated UUID. A retry that finds that Seller's e
 | `401` | Absent or definitively invalid session |
 | `403` | Missing, null, or non-matching Origin on an unsafe request |
 | `404` | Foreign, absent, or invalid listing identifier after authentication |
-| `409` | Stale edit, with `{ kind: "conflict" }` |
+| `409` | Conflicting create retry or stale edit, with `{ kind: "conflict" }` |
 | `413` | JSON body exceeds 32 KiB |
 | `415` | Unsafe request does not use `application/json` |
 | `422` | Invalid or unknown DTO properties, invalid field values, or invalid revision |

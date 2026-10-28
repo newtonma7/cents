@@ -49,13 +49,10 @@ export async function createDraft({ client: supabase, seller }: ListingSession, 
     .insert({ id: input.id, ...input.fields });
   if (!error) return { kind: "created" };
 
-  const { data: existing, error: readError } = await supabase.from("canonical_listings")
-    .select("id, seller_id").eq("id", input.id).eq("seller_id", seller.id).maybeSingle();
-  const listing = listingOwnerSchema.safeParse(existing);
-  if (!readError && listing.success && listing.data.seller_id === seller.id) {
-    return { kind: "created" };
-  }
-  return saveError;
+  const existing = await readSnapshot(supabase, input.id, seller.id);
+  if (!existing) return saveError;
+  return existing.revision === 1 && sameDraftFields(existing.fields, input.fields)
+    ? { kind: "created" } : { kind: "conflict" };
 }
 
 export async function saveDraft({ client: supabase, seller }: ListingSession, input: {

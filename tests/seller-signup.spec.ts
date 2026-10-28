@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { z } from "zod";
 
 async function requestMagicLink(
   page: Page,
@@ -15,8 +16,8 @@ async function requestMagicLink(
     `http://127.0.0.1:54321/test/inbox?email=${encodeURIComponent(email)}`,
   );
   expect(message.ok()).toBeTruthy();
-  const { link } = await message.json();
-  return link as string;
+  const { link } = z.object({ link: z.url() }).parse(await message.json());
+  return link;
 }
 
 test("a Seller can create an account and return with magic links", async ({
@@ -158,10 +159,14 @@ test("an owned UUID collision recovers without overwriting the listing", async (
   ).toBe(id);
   await page.getByRole("button", { name: "Save draft" }).click();
 
-  await expect(page).toHaveURL(/\/listings$/);
-  await expect(page.getByRole("heading", { name: "Original title" })).toBeVisible();
-  await expect(page.getByText("Original description.")).toBeVisible();
-  await expect(page.getByText("Do not replace the existing title")).toHaveCount(0);
+  await expect(page.locator(".error-message")).toContainText("Your changes are still here.");
+  await expect(page).toHaveURL(/\/listings\/new$/);
+  await expect(page.getByLabel("Title")).toHaveValue("Do not replace the existing title");
+  await expect(page.getByLabel("Description")).toHaveValue("Do not replace the existing description.");
+  const stored = await (await page.request.get(`/api/listings/${id}`)).json();
+  expect(stored.snapshot.fields.title).toBe("Original title");
+  expect(stored.snapshot.fields.description).toBe("Original description.");
+  expect(stored.snapshot.revision).toBe(1);
 });
 
 test("a committed draft appears once after its insert response is lost", async ({
@@ -183,6 +188,43 @@ test("a committed draft appears once after its insert response is lost", async (
   await expect(page).toHaveURL(/\/listings$/);
   await expect(page.getByRole("heading", { name: "Committed before response loss" })).toHaveCount(1);
   await expect(page.getByText("The first request committed.")).toBeVisible();
+});
+
+test("a changed create retry retains unsaved edits after the successful response is lost", async ({ page, request }) => {
+  await page.goto("/");
+  const link = await requestMagicLink(page, request, "changed-create-retry@example.com");
+  await page.goto(link);
+  await page.getByRole("link", { name: "Create Canonical Listing" }).click();
+  await page.getByLabel("Title").fill("Committed original");
+  const id = await page.locator('input[name="id"]').inputValue();
+  await page.route("**/api/listings", async (route) => {
+    expect((await route.fetch()).status()).toBe(201);
+    await route.abort("failed");
+  }, { times: 1 });
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.locator(".error-message")).toContainText("We could not save this draft");
+
+  await page.getByLabel("Title").fill("New unsaved title");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.locator(".error-message")).toContainText("Your changes are still here.");
+  await expect(page).toHaveURL(/\/listings\/new$/);
+  await expect(page.getByLabel("Title")).toHaveValue("New unsaved title");
+  await expect(page.locator('input[name="id"]')).toHaveValue(id);
+  await expect(page.getByRole("status")).toHaveText("Unsaved changes");
+
+  const savedLink = page.getByRole("link", { name: "Open saved draft" });
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await savedLink.click();
+  await expect(page.getByLabel("Title")).toHaveValue("New unsaved title");
+  page.once("dialog", (dialog) => dialog.accept());
+  await savedLink.click();
+  await expect(page).toHaveURL(`/listings/${id}`);
+  await expect(page.getByLabel("Title")).toHaveValue("Committed original");
+  await page.getByLabel("Title").fill("Explicitly saved edit");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByRole("status")).toHaveText("Draft saved.");
+  await page.reload();
+  await expect(page.getByLabel("Title")).toHaveValue("Explicitly saved edit");
 });
 
 test("a Unicode title within the database character limit appears on the dashboard", async ({

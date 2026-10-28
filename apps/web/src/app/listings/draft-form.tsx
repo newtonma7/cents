@@ -254,8 +254,9 @@ export function DraftForm(props: EditorProps) {
       ) : null}
       {editor.feedback.kind === "conflict" ? (
         <p className="error-message" role="alert">
-          This draft has a newer saved version. Your changes are still here.
-          Load the saved version to continue.
+          {props.mode === "create"
+            ? "This draft already has a saved version with different details. Your changes are still here. Open the saved draft to continue."
+            : "This draft has a newer saved version. Your changes are still here. Load the saved version to continue."}
         </p>
       ) : null}
       <p role="status">
@@ -269,6 +270,8 @@ export function DraftForm(props: EditorProps) {
       </button>
       {props.mode === "edit" ? (
         <button disabled={disabled} type="button" onClick={loadSaved}>Load saved version</button>
+      ) : editor.feedback.kind === "conflict" ? (
+        <a href={`/listings/${editor.id}`}>Open saved draft</a>
       ) : null}
     </form>
   );
