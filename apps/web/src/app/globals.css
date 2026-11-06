@@ -206,6 +206,10 @@ select:focus-visible {
   margin-top: 0.35rem;
 }
 
+.login-return {
+  margin: 1rem 0 0;
+}
+
 .fine-print {
   margin: 1.2rem 0 0;
   color: var(--muted);
@@ -233,6 +237,20 @@ select:focus-visible {
   width: min(32rem, 100%);
   margin: 0;
   text-align: center;
+}
+
+.password-card form {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.password-card button {
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.account-link {
+  white-space: nowrap;
 }
 
 .mail-icon,

@@ -50,6 +50,7 @@ export default function ListingsPage() {
         </Link>
         <div className="seller-account">
           <span className="seller-email">{seller.email}</span>
+          <Link className="secondary-link account-link" href="/account/password">Password</Link>
           <LogoutButton />
         </div>
       </header>

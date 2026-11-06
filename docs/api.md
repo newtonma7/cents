@@ -17,6 +17,8 @@ All private responses and callbacks use `Cache-Control: no-store`. Responses con
 | `GET /healthz` | None | `200 { ok: true }`. This is process health, not provider health. |
 | `GET /api/session` | Session cookies | `200 { seller: { id, email } }` |
 | `POST /api/auth/magic-link` | `{ email }` | `200 { kind: "sent" }` |
+| `POST /api/auth/password` | `{ email, password }` | `200 { kind: "signed-in" }` |
+| `PUT /api/account/password` | Authenticated `{ password, confirmPassword }` | `200 { kind: "password-updated" }` |
 | `POST /api/auth/logout` | `{}` | `204`, clears the current session cookies |
 | `GET /auth/confirm` | `code` and optional `sb_flow_id`, or `token_hash` and `type=email` query | `303` to the configured origin's `/listings`, with session cookies |
 | `GET /api/listings` | Session cookies | `200 { listings: [{ id, title, description }] }` |
@@ -35,7 +37,7 @@ Creation uses a stable client-generated UUID. A retry acknowledges creation only
 | Status | Meaning |
 | --- | --- |
 | `400` | Malformed JSON |
-| `401` | Absent or definitively invalid session |
+| `401` | Absent or definitively invalid session, or rejected login credentials |
 | `403` | Missing, null, or non-matching Origin on an unsafe request |
 | `404` | Foreign, absent, or invalid listing identifier after authentication |
 | `409` | Conflicting create retry or stale edit, with `{ kind: "conflict" }` |
@@ -50,6 +52,10 @@ Missing listing reads and edits return `{ kind: "missing" }`. Other errors retur
 
 The frontend now loads private data over HTTP. Its neutral HTML shell may return 200 before the API returns 401, 404, or 503. The HTML document is not a resource-authorization response. The API owns those statuses. The UI still redirects signed-out visitors, shows not-found for inaccessible drafts, and distinguishes infrastructure errors. Acceptance tests assert API statuses and visible UI outcomes separately.
 
+Password login accepts an email of at most 254 characters and a nonempty password of at most 1024 characters. It preserves password whitespace and does not apply password-creation rules. Invalid credentials and unconfirmed accounts return the same generic 401 response. The response contains only `{ kind: "signed-in" }`; the cookie adapter stores the session in HttpOnly cookies.
+
+Password setup and changes require an authenticated session. Both submitted values must match and contain 12 to 1024 characters. The API calls Supabase Auth with the caller's session and returns only `{ kind: "password-updated" }`. Provider reauthentication and MFA policy remain enabled. A 403 asks the user to sign out and authenticate again with a fresh magic link. This endpoint is not a forgotten-password email flow.
+
 A 401 during save does not navigate away or discard input. Native editor entry and exit preserve browser Back and beforeunload warnings. Acknowledged creation replaces the spent editor in browser history.
 
 ## Cookie and request security
@@ -58,7 +64,7 @@ Express uses the SDK's cookie adapter and standard `cookie` parsing and serializ
 
 All new and refreshed auth cookies are HttpOnly, host-only, Path=/, and SameSite=Lax. They are Secure when the configured public origin uses HTTPS. Chunk writes and deletions remain separate Set-Cookie headers through Next's development and production rewrites. Session values never appear in application JSON.
 
-Unsafe JSON requests, including magic-link requests, require an Origin that exactly matches the configured public web origin. No wildcard credentialed CORS or second CSRF-token mechanism exists. Browser callers use same-origin fetch.
+Unsafe JSON requests, including magic-link, password-login, password-change, and logout requests, require an Origin that exactly matches the configured public web origin. No wildcard credentialed CORS or second CSRF-token mechanism exists. Browser callers use same-origin fetch.
 
 The callback accepts either a nonempty PKCE `code` of at most 2048 characters with an optional `sb_flow_id` of at most 128 characters, or `type=email` and a nonempty token hash of at most 2048 characters. Mixed proof types and repeated proof parameters are rejected. PKCE exchanges require the verifier cookie from the browser profile that requested the email. Default Supabase email templates use this flow; custom token-hash templates remain supported. The callback ignores request Host and any `next` destination. Invalid proof redirects to a fixed sign-in error at the configured origin. Temporary verification failures return 503 rather than falsely reporting an expired link. Callback responses also use `Referrer-Policy: no-referrer`. Next development access logs omit this callback URL. Configure external ingress and access logs to redact callback query strings, cookies, and authorization headers.
 

@@ -67,6 +67,7 @@ export default function SignIn({ initialError }: { initialError: string }) {
           />
           <button disabled={pending} type="submit">{pending ? "Sending…" : "Send magic link"}</button>
         </form>
+        <p className="login-return"><Link className="secondary-link" href="/login">Sign in with a password</Link></p>
         <p className="fine-print">
           By continuing, you agree to use Cents only with marketplace accounts
           you control.

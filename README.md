@@ -60,6 +60,8 @@ Existing custom templates can still use direct token-hash verification:
 
 After switching from the old local Next backend, clear prior local auth cookies and sign in again. Express sets all new and refreshed session cookies to HttpOnly. The application does not attempt to infer or adopt previous cookie attributes.
 
+Existing accounts can sign in at `/login` with their email and password. The landing page at `/` still sends magic links. To set or change a password, sign in with a magic link, open **Password** in the listings header, and submit the new password. Sign out and use `/login` to verify it. Passwords are sent directly to Supabase Auth and are never stored by the application. This authenticated setup does not provide a forgotten-password email flow. If Supabase requires recent authentication or additional verification, sign out and sign in again with a fresh magic link. Follow any verification prompt.
+
 ## Check the migration
 
 ```sh

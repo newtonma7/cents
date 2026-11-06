@@ -9,7 +9,8 @@ test("every JSON mutation requires the exact configured Origin before authentica
   for (const origin of [undefined, "null", "https://attacker.invalid", webOrigin + "/", "http://localhost:3000", "http://127.0.0.1:3001"]) {
     const headers: Record<string, string> = origin === undefined ? {} : { Origin: origin };
     for (const [url, method] of [
-      [apiOrigin + "/api/auth/magic-link", "POST"], [apiOrigin + "/api/auth/logout", "POST"],
+      [apiOrigin + "/api/auth/magic-link", "POST"], [apiOrigin + "/api/auth/password", "POST"],
+      [apiOrigin + "/api/auth/logout", "POST"],
       [endpoint, "POST"], [endpoint + "/" + randomUUID(), "PUT"],
     ]) {
       const response = await request.fetch(url, { method, headers, data: {} });
@@ -28,6 +29,9 @@ test("JSON and HTTP bounds distinguish malformed, oversized and unsupported requ
   expect(badJson.status()).toBe(400);
   expect(await badJson.json()).toEqual({ kind: "error", message: "Malformed JSON." });
   expect((await request.post(url, {
+    headers: { ...mutationHeaders, "Content-Type": "text/plain" }, data: "{}",
+  })).status()).toBe(415);
+  expect((await request.post(apiOrigin + "/api/auth/password", {
     headers: { ...mutationHeaders, "Content-Type": "text/plain" }, data: "{}",
   })).status()).toBe(415);
   expect((await request.post(apiOrigin + "/api/auth/logout", {

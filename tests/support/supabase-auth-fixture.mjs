@@ -9,6 +9,10 @@ const accessTokens = new Map();
 const refreshTokens = new Map();
 const refreshTokenByAccessToken = new Map();
 const sellers = new Map();
+const passwordAccounts = new Map([
+  ["seller-one@example.com", " fixture-password-one "],
+  ["seller-two@example.com", "fixture-password-two"],
+]);
 const listings = new Map();
 let messageNumber = 0;
 let nextMutationFault = null;
@@ -347,6 +351,22 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/auth/v1/user" && request.method === "PUT") {
+    const seller = accessTokens.get(bearerToken(request));
+    if (!seller) { json(response, 401, { message: "Invalid token" }); return; }
+    if (authFault === "password-update-weak") { json(response, 422, { code: "weak_password", message: "Password is too weak" }); return; }
+    if (authFault === "password-update-same") { json(response, 422, { code: "same_password", message: "Password is unchanged" }); return; }
+    if (authFault === "password-update-reauth") { json(response, 403, { code: "reauthentication_needed", message: "Recent login required" }); return; }
+    if (authFault === "password-update-mfa") { json(response, 403, { code: "insufficient_aal", message: "Additional verification required" }); return; }
+    if (authFault === "password-update-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    if (authFault === "password-update-unknown") { json(response, 400, { code: "unknown_auth_error", message: "Private provider failure" }); return; }
+    const body = await readJson(request);
+    if (typeof body.password !== "string") { json(response, 422, { message: "Password required" }); return; }
+    passwordAccounts.set(seller.email, body.password);
+    json(response, 200, seller);
+    return;
+  }
+
   if (url.pathname === "/auth/v1/user" && request.method === "GET") {
     if (authFault === "user-outage") { json(response, 503, { message: "Temporary outage" }); return; }
     if (authFault === "user-invalid") { json(response, 401, { code: "bad_jwt", message: "Invalid token" }); return; }
@@ -356,6 +376,20 @@ const server = createServer(async (request, response) => {
       return;
     }
     json(response, 200, seller);
+    return;
+  }
+
+  if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "password" && request.method === "POST") {
+    if (authFault === "password-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    if (authFault === "password-unknown-400") { json(response, 400, { code: "unexpected_provider_code", message: "Private provider failure" }); return; }
+    const body = await readJson(request);
+    if (passwordAccounts.get(body.email) !== body.password) {
+      json(response, 400, { code: "invalid_credentials", message: "Invalid login credentials" });
+      return;
+    }
+    const mode = nextSessionMode;
+    nextSessionMode = null;
+    json(response, 200, sessionFor(sellerFor(body.email), mode));
     return;
   }
 

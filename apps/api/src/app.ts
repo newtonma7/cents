@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express, { type ErrorRequestHandler } from "express";
-import { magicLinkSchema } from "@cents/contracts";
-import { authenticate, requestClient } from "./auth.js";
+import { magicLinkSchema, passwordChangeSchema, passwordLoginSchema } from "@cents/contracts";
+import { authenticate, requireSession, requestClient, type SessionClient } from "./auth.js";
 import type { ApiConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import { listingRoutes } from "./listing-routes.js";
@@ -22,6 +22,64 @@ export function createApp(config: ApiConfig) {
     next();
   });
   app.use(express.json({ limit: "32kb" }));
+  app.post("/api/auth/password", async (req, res) => {
+    const parsed = passwordLoginSchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(422, "Enter a valid email address and password.");
+    let result: Awaited<ReturnType<ReturnType<typeof requestClient>["auth"]["signInWithPassword"]>>;
+    try {
+      result = await requestClient(req, res, config).auth.signInWithPassword(parsed.data);
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message === "Provider connection failed.") {
+        throw new HttpError(503, "Sign-in is temporarily unavailable. Try again.");
+      }
+      throw error;
+    }
+    if (result.error) {
+      const accountRejectionCodes = new Set([
+        "invalid_credentials", "email_not_confirmed", "user_banned", "user_not_found",
+      ]);
+      if (result.error.code && accountRejectionCodes.has(result.error.code)) {
+        throw new HttpError(401, "Email or password is incorrect.");
+      }
+      throw new HttpError(503, "Sign-in is temporarily unavailable. Try again.");
+    }
+    res.json({ kind: "signed-in" });
+  });
+  app.put("/api/account/password", async (req, res) => {
+    const parsed = passwordChangeSchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(422, "Enter matching passwords of at least 12 characters.");
+    let client: SessionClient;
+    try {
+      ({ client } = await requireSession(req, res, config));
+    } catch (error: unknown) {
+      if (error instanceof HttpError && error.status === 401) {
+        throw new HttpError(401, "Sign in to change your password.");
+      }
+      throw error;
+    }
+    let error: Awaited<ReturnType<SessionClient["auth"]["updateUser"]>>["error"];
+    try {
+      ({ error } = await client.auth.updateUser({ password: parsed.data.password }));
+    } catch {
+      throw new HttpError(503, "We could not change your password. Try again.");
+    }
+    if (error) {
+      if (error.status === 401 || error.code === "bad_jwt") {
+        throw new HttpError(401, "Your session is no longer valid. Sign in again before changing your password.");
+      }
+      if (error.code === "weak_password" || error.code === "same_password") {
+        throw new HttpError(422, "Choose a different password that meets the account requirements.");
+      }
+      if (["reauthentication_needed", "reauthentication_not_valid"].includes(error.code ?? "")) {
+        throw new HttpError(403, "Sign out, then sign in again with a fresh magic link. Complete any additional verification if prompted.");
+      }
+      if (["insufficient_aal", "mfa_verification_failed"].includes(error.code ?? "")) {
+        throw new HttpError(403, "Sign out, then sign in again with a fresh magic link. Complete any additional verification if prompted.");
+      }
+      throw new HttpError(503, "We could not change your password. Try again.");
+    }
+    res.json({ kind: "password-updated" });
+  });
   app.post("/api/auth/logout", async (req, res) => {
     const { error } = await requestClient(req, res, config).auth.signOut({ scope: "local" });
     if (error) throw new HttpError(503, "We could not complete sign out. Try again.");

@@ -1,5 +1,6 @@
 import {
-  listingsSchema, loadedDraftSchema, mutationResultSchema, sentSchema, sessionSchema,
+  listingsSchema, loadedDraftSchema, mutationResultSchema, passwordUpdatedSchema, sentSchema, sessionSchema, signedInSchema,
+  type PasswordChange, type PasswordLogin,
   type DraftInput, type DraftMutationResult,
 } from "@cents/contracts";
 
@@ -23,6 +24,43 @@ async function read<T>(
 }
 
 export const session = () => read("/api/session", sessionSchema);
+export async function changePassword(input: PasswordChange): Promise<
+  { kind: "password-updated" } | { kind: "error"; message: string; reauthentication: boolean }
+> {
+  try {
+    return await read("/api/account/password", passwordUpdatedSchema, {
+      method: "PUT", body: JSON.stringify(input),
+    });
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 0;
+    return {
+      kind: "error",
+      message: status === 401 ? "Your session is no longer valid. Sign in again before changing your password."
+        : status === 403 ? "Sign out, then sign in again with a fresh magic link. Complete any additional verification if prompted."
+        : status === 422 ? "Choose matching passwords of at least 12 characters that meet your account requirements."
+        : "We could not confirm the password change. Try signing in with the new password before retrying.",
+      reauthentication: status === 403,
+    };
+  }
+}
+export async function passwordLogin(input: PasswordLogin): Promise<
+  { kind: "signed-in" } | { kind: "error"; message: string }
+> {
+  try {
+    return await read("/api/auth/password", signedInSchema, {
+      method: "POST", body: JSON.stringify(input),
+    });
+  } catch (error) {
+    return {
+      kind: "error",
+      message: error instanceof ApiError && error.status === 401
+        ? "Email or password is incorrect."
+        : error instanceof ApiError && error.status === 422
+          ? "Enter a valid email address and password."
+          : "Sign-in is temporarily unavailable. Try again.",
+    };
+  }
+}
 export async function logout(): Promise<void> {
   const response = await fetch("/api/auth/logout", {
     method: "POST", credentials: "same-origin", cache: "no-store",
