@@ -25,11 +25,16 @@
     "test:production": "npm run build && CENTS_TEST_PRODUCTION=1 npm test",
     "test:api": "npm run build:api && CENTS_TEST_API_ONLY=1 CENTS_TEST_PRODUCTION=1 playwright test tests/api-*.spec.ts"
   },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
+  },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "^24",
     "eslint": "^9",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "16.4.5",
     "typescript": "^5",
     "concurrently": "^9.2.1"
   }
