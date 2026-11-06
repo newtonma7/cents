@@ -34,10 +34,19 @@ export function createApp(config: ApiConfig) {
     res.json({ kind: "sent" });
   });
   app.get("/auth/confirm", async (req, res) => {
-    const { token_hash: hash, type } = req.query;
-    if (typeof hash === "string" && hash.length > 0 && hash.length <= 2048 && type === "email") {
+    const { token_hash: hash, type, code, sb_flow_id: flowId } = req.query;
+    const validCode = typeof code === "string" && code.length > 0 && code.length <= 2048
+      && (flowId === undefined || (typeof flowId === "string" && flowId.length > 0 && flowId.length <= 128))
+      && hash === undefined && type === undefined;
+    const validHash = code === undefined && flowId === undefined
+      && typeof hash === "string" && hash.length > 0 && hash.length <= 2048 && type === "email";
+    const proof: { kind: "code"; value: string } | { kind: "hash"; value: string } | null =
+      validCode ? { kind: "code", value: code } : validHash ? { kind: "hash", value: hash } : null;
+    if (proof) {
       const client = requestClient(req, res, config);
-      const { error } = await client.auth.verifyOtp({ token_hash: hash, type: "email" });
+      const { error } = proof.kind === "code"
+        ? await client.auth.exchangeCodeForSession(proof.value, typeof flowId === "string" ? { flowId } : undefined)
+        : await client.auth.verifyOtp({ token_hash: proof.value, type: "email" });
       if (!error) { res.redirect(303, config.webOrigin + "/listings"); return; }
       if (![400, 401, 403, 422].includes(error.status ?? 0)) {
         throw new HttpError(503, "Sign-in is temporarily unavailable. Try again.");

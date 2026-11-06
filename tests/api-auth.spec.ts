@@ -124,7 +124,10 @@ test("parallel refreshes for different Sellers never exchange identities", async
 
 test("callback accepts only bounded email proof and ignores Host and next redirect injection", async ({ request }) => {
   for (const query of ["", "?token_hash=x&type=signup", "?token_hash=x&type=email&type=email",
-    "?token_hash=" + "x".repeat(2049) + "&type=email", "?token_hash=x&type=email"]) {
+    "?token_hash=" + "x".repeat(2049) + "&type=email", "?token_hash=x&type=email",
+    "?code=", "?code=x&code=y", "?code=" + "x".repeat(2049),
+    "?code=x&token_hash=x&type=email", "?code=x&sb_flow_id=a&sb_flow_id=b",
+    "?code=x&sb_flow_id=" + "x".repeat(129)]) {
     const response = await request.get(apiOrigin + "/auth/confirm" + query, {
       headers: { Host: "attacker.invalid" }, maxRedirects: 0,
     });

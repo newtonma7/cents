@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 
 const messages = new Map();
 const pendingTokens = new Map();
+const pendingCodes = new Map();
+let nextEmailFlow = null;
 const accessTokens = new Map();
 const refreshTokens = new Map();
 const sellers = new Map();
@@ -128,6 +130,7 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/test/auth" && request.method === "POST") {
     const body = await readJson(request);
     nextSessionMode = body.session ?? null;
+    nextEmailFlow = body.emailFlow ?? null;
     authFault = body.fault ?? null;
     json(response, 200, {});
     return;
@@ -161,8 +164,51 @@ const server = createServer(async (request, response) => {
     const confirmation = new URL(redirectTo);
     confirmation.searchParams.set("token_hash", tokenHash);
     confirmation.searchParams.set("type", "email");
-    messages.set(email, { link: confirmation.toString() });
+    if (nextEmailFlow === "pkce") {
+      nextEmailFlow = null;
+      pendingTokens.set(tokenHash, { email, redirectTo, challenge: body.code_challenge });
+      const verify = new URL("/auth/v1/verify", "http://127.0.0.1:54321");
+      verify.searchParams.set("token", "pkce_" + tokenHash);
+      verify.searchParams.set("type", sellers.has(email) ? "magiclink" : "signup");
+      verify.searchParams.set("redirect_to", redirectTo);
+      messages.set(email, { link: verify.toString() });
+    } else {
+      messages.set(email, { link: confirmation.toString() });
+    }
     json(response, 200, {});
+    return;
+  }
+
+  if (url.pathname === "/auth/v1/verify" && request.method === "GET") {
+    const token = url.searchParams.get("token")?.replace(/^pkce_/, "");
+    const pending = pendingTokens.get(token);
+    if (!pending || typeof pending === "string") {
+      json(response, 403, { message: "Invalid or expired token" });
+      return;
+    }
+    pendingTokens.delete(token);
+    const code = randomUUID();
+    pendingCodes.set(code, pending);
+    const callback = new URL(pending.redirectTo);
+    callback.searchParams.set("code", code);
+    response.writeHead(303, { location: callback.toString() }).end();
+    return;
+  }
+
+  if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "pkce" && request.method === "POST") {
+    if (authFault === "verify-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    const body = await readJson(request);
+    const pending = pendingCodes.get(body.auth_code);
+    const challenge = typeof body.code_verifier === "string"
+      ? createHash("sha256").update(body.code_verifier).digest("base64url") : null;
+    if (!pending || !challenge || challenge !== pending.challenge) {
+      json(response, 400, { code: "bad_code_verifier", message: "Invalid code or verifier" });
+      return;
+    }
+    pendingCodes.delete(body.auth_code);
+    const mode = nextSessionMode;
+    nextSessionMode = null;
+    json(response, 200, sessionFor(sellerFor(pending.email), mode));
     return;
   }
 

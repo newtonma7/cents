@@ -17,7 +17,7 @@ All private responses and callbacks use `Cache-Control: no-store`. Responses con
 | `GET /healthz` | None | `200 { ok: true }`. This is process health, not provider health. |
 | `GET /api/session` | Session cookies | `200 { seller: { id, email } }` |
 | `POST /api/auth/magic-link` | `{ email }` | `200 { kind: "sent" }` |
-| `GET /auth/confirm` | `token_hash` and `type=email` query | `303` to the configured origin's `/listings`, with session cookies |
+| `GET /auth/confirm` | `code` and optional `sb_flow_id`, or `token_hash` and `type=email` query | `303` to the configured origin's `/listings`, with session cookies |
 | `GET /api/listings` | Session cookies | `200 { listings: [{ id, title, description }] }` |
 | `POST /api/listings` | `{ id, fields: DraftInput }` | `201 { kind: "created" }` |
 | `GET /api/listings/:id` | Session cookies | `200 { kind: "loaded", snapshot }` |
@@ -59,6 +59,6 @@ All new and refreshed auth cookies are HttpOnly, host-only, Path=/, and SameSite
 
 Unsafe JSON requests, including magic-link requests, require an Origin that exactly matches the configured public web origin. No wildcard credentialed CORS or second CSRF-token mechanism exists. Browser callers use same-origin fetch.
 
-The callback accepts only `type=email` and a nonempty token hash of at most 2048 characters. It ignores request Host and any `next` destination. Invalid proof redirects to a fixed sign-in error at the configured origin. Temporary verification failures return 503 rather than falsely reporting an expired link. Callback responses also use `Referrer-Policy: no-referrer`. Next development access logs omit this callback URL. Configure external ingress and access logs to redact callback query strings, cookies, and authorization headers.
+The callback accepts either a nonempty PKCE `code` of at most 2048 characters with an optional `sb_flow_id` of at most 128 characters, or `type=email` and a nonempty token hash of at most 2048 characters. Mixed proof types and repeated proof parameters are rejected. PKCE exchanges require the verifier cookie from the browser profile that requested the email. Default Supabase email templates use this flow; custom token-hash templates remain supported. The callback ignores request Host and any `next` destination. Invalid proof redirects to a fixed sign-in error at the configured origin. Temporary verification failures return 503 rather than falsely reporting an expired link. Callback responses also use `Referrer-Policy: no-referrer`. Next development access logs omit this callback URL. Configure external ingress and access logs to redact callback query strings, cookies, and authorization headers.
 
 No extension authentication, logout UI, delete, publish, or pairing endpoints are part of this migration.

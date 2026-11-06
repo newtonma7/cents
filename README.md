@@ -50,7 +50,9 @@ Express emits Node ESM into `apps/api/dist` and runs without Next. The root star
 
 The schema prerequisites are both files under `supabase/migrations/`. The edit migration `20261023000000_edit_canonical_listing_drafts.sql` adds the edit grants and revision checks. Both migrations were applied to the hosted Cents project on 2026-11-05. Hosted rollback-only SQL checks verified draft creation, editing, revision increments, and stale-update rejection. Full hosted browser acceptance remains a separate check.
 
-Keep Supabase Auth's Site URL and allowed redirect URL aligned with `NEXT_PUBLIC_SITE_URL`. Email signup must be enabled. The existing confirmation and magic-link template remains:
+Keep Supabase Auth's Site URL aligned with `NEXT_PUBLIC_SITE_URL` and allow its `/auth/confirm` redirect URL. Email signup must be enabled. Default confirmation and magic-link templates work through PKCE without custom SMTP. Open each email link in the same browser profile and on the same hostname that requested it; `localhost` and `127.0.0.1` do not share verifier cookies.
+
+Existing custom templates can still use direct token-hash verification:
 
 ```text
 {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
