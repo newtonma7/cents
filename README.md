@@ -48,7 +48,7 @@ Express emits Node ESM into `apps/api/dist` and runs without Next. The root star
 
 ## Prepare Supabase separately
 
-The schema prerequisites are both files under `supabase/migrations/`. The edit migration `20261023000000_edit_canonical_listing_drafts.sql` adds the edit grants and revision checks. This migration has not been applied to the hosted project as part of this work. Review it before a later hosted rollout.
+The schema prerequisites are both files under `supabase/migrations/`. The edit migration `20261023000000_edit_canonical_listing_drafts.sql` adds the edit grants and revision checks. Both migrations were applied to the hosted Cents project on 2026-11-05. Hosted rollback-only SQL checks verified draft creation, editing, revision increments, and stale-update rejection. Full hosted browser acceptance remains a separate check.
 
 Keep Supabase Auth's Site URL and allowed redirect URL aligned with `NEXT_PUBLIC_SITE_URL`. Email signup must be enabled. The existing confirmation and magic-link template remains:
 
