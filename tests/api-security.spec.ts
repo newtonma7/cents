@@ -70,11 +70,10 @@ test("strict listing DTOs reject injected ownership, revision, timestamps and st
     headers: mutationHeaders, data: { id, fields: emptyDraftInput },
   })).status()).toBe(201);
   for (const data of [
-    { expectedRevision: 1, fields: emptyDraftInput, seller_id: randomUUID() },
-    { expectedRevision: 1, fields: { ...emptyDraftInput, revision: 20 } },
-    { expectedRevision: "1", fields: emptyDraftInput },
-    { expectedRevision: 0, fields: emptyDraftInput },
-    { expectedRevision: 1, fields: { ...emptyDraftInput, price_usd: "1e2" } },
+    { fields: emptyDraftInput, seller_id: randomUUID() },
+    { fields: { ...emptyDraftInput, revision: 20 } },
+    { expectedRevision: 1, fields: emptyDraftInput },
+    { fields: { ...emptyDraftInput, price_usd: "1e2" } },
   ]) {
     expect((await request.put(endpoint + "/" + id, { headers: mutationHeaders, data })).status()).toBe(422);
   }
@@ -96,7 +95,7 @@ test("API foreign, missing and invalid identifiers are indistinguishable after a
     for (const deniedId of [id, randomUUID(), "not-a-uuid"]) {
       const read = await request.get(endpoint + "/" + deniedId);
       const update = await request.put(endpoint + "/" + deniedId, {
-        headers: mutationHeaders, data: { expectedRevision: 1, fields: emptyDraftInput },
+        headers: mutationHeaders, data: { fields: emptyDraftInput },
       });
       expect(read.status()).toBe(404);
       expect(update.status()).toBe(404);
@@ -110,21 +109,22 @@ test("API foreign, missing and invalid identifiers are indistinguishable after a
   } finally { await owner.dispose(); }
 });
 
-test("simultaneous HTTP edits with the same revision cannot overwrite the winner", async ({ request }) => {
+test("simultaneous unconditional HTTP edits both save in database order", async ({ request }) => {
   await apiSignIn(request);
   const id = randomUUID();
   await request.post(endpoint, { headers: mutationHeaders, data: { id, fields: emptyDraftInput } });
   const results = await Promise.all(["Left title", "Right title"].map((title) =>
     request.put(endpoint + "/" + id, {
-      headers: mutationHeaders, data: { expectedRevision: 1, fields: { ...emptyDraftInput, title } },
+      headers: mutationHeaders, data: { fields: { ...emptyDraftInput, title } },
     })));
-  expect(results.map((response) => response.status()).sort()).toEqual([200, 409]);
-  const winner = results.find((response) => response.status() === 200);
-  expect(winner).toBeDefined();
-  const saved = await winner?.json();
+  expect(results.map((response) => response.status())).toEqual([200, 200]);
+  const saved = await Promise.all(results.map((response) => response.json()));
+  expect(saved.map((result) => result.snapshot.revision).sort()).toEqual([2, 3]);
   const snapshot = (await (await request.get(endpoint + "/" + id)).json()).snapshot;
-  expect(snapshot.revision).toBe(2);
-  expect(snapshot).toEqual(saved.snapshot);
+  const finalSave = saved.find((result) => result.snapshot.revision === 3);
+  expect(snapshot.revision).toBe(3);
+  expect(snapshot).toEqual(finalSave.snapshot);
+  expect(["Left title", "Right title"]).toContain(snapshot.fields.title);
 });
 
 test("invalid stored rows produce generic 500 errors, not false 404 or raw provider data", async ({ request }) => {

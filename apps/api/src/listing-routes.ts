@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createDraftSchema, draftFormSchema, invalidFieldsMessage, saveDraftSchema } from "@cents/contracts";
+import { createDraftSchema, draftFormSchema, draftIdSchema, invalidFieldsMessage, saveDraftSchema } from "@cents/contracts";
 import { requireSession } from "./auth.js";
 import type { ApiConfig } from "./config.js";
 import { HttpError } from "./errors.js";
@@ -28,16 +28,16 @@ export function listingRoutes(config: ApiConfig) {
   });
   router.put("/:id", async (req, res) => {
     const session = await requireSession(req, res, config);
-    const existing = await getDraft(session, req.params.id);
-    if (!existing) { res.status(404).json({ kind: "missing" }); return; }
+    const id = draftIdSchema.safeParse(req.params.id);
+    if (!id.success) { res.status(404).json({ kind: "missing" }); return; }
     const command = saveDraftSchema.safeParse(req.body);
     if (!command.success) throw new HttpError(422, invalidFieldsMessage);
     const fields = draftFormSchema.safeParse(command.data.fields);
     if (!fields.success) throw new HttpError(422, invalidFieldsMessage);
     const result = await saveDraft(session, {
-      id: existing.id, fields: fields.data, expectedRevision: command.data.expectedRevision,
+      id: id.data, fields: fields.data,
     });
-    res.status(result.kind === "conflict" ? 409 : result.kind === "missing" ? 404 : result.kind === "error" ? 503 : 200).json(result);
+    res.status(result.kind === "missing" ? 404 : result.kind === "error" ? 503 : 200).json(result);
   });
   return router;
 }

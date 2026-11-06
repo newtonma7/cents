@@ -4,7 +4,7 @@ import type { Seller } from "@cents/contracts";
 import { HttpError } from "./errors.js";
 import {
   draftFieldsSchema, draftIdSchema, revisionSchema, sameDraftFields,
-  type DraftFields, type DraftMutationResult, type DraftSnapshot,
+  type DraftFields, type DraftMutationResult, type DraftSnapshot, type SaveDraftResult,
 } from "@cents/contracts";
 
 const dashboardColumns = "id, seller_id, title, description";
@@ -26,7 +26,7 @@ const snapshotSchema = listingOwnerSchema.extend(draftFieldsSchema.shape).extend
 }));
 
 type ListingSession = { client: SessionClient; seller: Seller };
-const saveError = { kind: "error", message: "We could not save this draft. Try again." } satisfies DraftMutationResult;
+const saveError = { kind: "error", message: "We could not save this draft. Try again." } satisfies SaveDraftResult;
 
 async function readSnapshot(supabase: SessionClient, id: DraftSnapshot["id"], sellerId: string) {
   const { data, error } = await supabase.from("canonical_listings")
@@ -58,21 +58,17 @@ export async function createDraft({ client: supabase, seller }: ListingSession, 
 export async function saveDraft({ client: supabase, seller }: ListingSession, input: {
   id: z.infer<typeof draftIdSchema>;
   fields: DraftFields;
-  expectedRevision: number;
-}): Promise<DraftMutationResult> {
+}): Promise<SaveDraftResult> {
   const { data, error } = await supabase.from("canonical_listings")
     .update(input.fields).eq("id", input.id).eq("seller_id", seller.id)
-    .eq("revision", input.expectedRevision).select(snapshotColumns).maybeSingle();
-  if (!error && data !== null) {
-    return { kind: "saved", snapshot: snapshotSchema.parse(data) };
-  }
+    .select(snapshotColumns).maybeSingle();
+  if (!error && data !== null) return { kind: "saved", snapshot: snapshotSchema.parse(data) };
+  if (!error) return { kind: "missing" };
 
   const current = await readSnapshot(supabase, input.id, seller.id);
-  if (!current) return { kind: "missing" };
-  if (current.revision === input.expectedRevision + 1 && sameDraftFields(current.fields, input.fields)) {
+  if (current && sameDraftFields(current.fields, input.fields)) {
     return { kind: "saved", snapshot: current };
   }
-  if (current.revision !== input.expectedRevision) return { kind: "conflict" };
   return saveError;
 }
 

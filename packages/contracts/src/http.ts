@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { draftFieldsSchema, draftIdSchema, draftInputSchema, draftSnapshotSchema, revisionSchema } from "./draft.js";
+import { draftFieldsSchema, draftIdSchema, draftInputSchema, draftSnapshotSchema } from "./draft.js";
 export const createDraftSchema = z.strictObject({ id: draftIdSchema, fields: draftInputSchema });
-export const saveDraftSchema = z.strictObject({ expectedRevision: revisionSchema, fields: draftInputSchema });
+export const saveDraftSchema = z.strictObject({ fields: draftInputSchema });
 export const magicLinkSchema = z.strictObject({ email: z.email().max(254) });
 export const passwordLoginSchema = z.strictObject({
   email: z.email().max(254), password: z.string().min(1).max(1024),

@@ -40,10 +40,21 @@ async function createAndOpen(page: Page, request: APIRequestContext, email?: str
   return id;
 }
 
+async function readRevision(page: Page, id: string) {
+  const response = await page.request.get(`/api/listings/${id}`);
+  expect(response.status()).toBe(200);
+  return (await response.json()).snapshot.revision;
+}
+
+async function expectRevision(page: Page, revision: number) {
+  const id = await page.locator('input[name="id"]').inputValue();
+  await expect.poll(() => readRevision(page, id)).toBe(revision);
+}
+
 async function saveEdit(page: Page, revision: number) {
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Draft saved.");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue(String(revision));
+  await expectRevision(page, revision);
 }
 
 async function fault(request: APIRequestContext, mode: string) {
@@ -130,7 +141,7 @@ test("all draft fields save, reopen and edit with exact cents", async ({ page, r
   await page.reload();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Updated linen shirt");
   await expect(page.getByLabel("Price (USD)")).toHaveValue("21474836.47");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
+  await expectRevision(page, 2);
 });
 
 test("fields clear to null independently and zero USD is not absent", async ({ page, request }) => {
@@ -175,7 +186,7 @@ test("invalid prices and codepoint lengths preserve unsaved fields and revision"
     await expect(page.locator("form").getByRole("alert")).toContainText("Check the draft fields");
     await expect(page.getByLabel("Price (USD)")).toHaveValue(price);
     await expect(page.getByLabel("Brand")).toHaveValue("Keep this unsaved brand");
-    await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+    await expectRevision(page, 1);
   }
   await page.getByLabel("Price (USD)").fill("1.05");
   await page.getByLabel("Title", { exact: true }).fill("🧥".repeat(161));
@@ -244,36 +255,38 @@ test("unchanged, reverted and successfully saved forms leave without warning", a
   expect(dialogs).toEqual([]);
 });
 
-test("stale tabs cannot overwrite and load saved version rereads after explicit discard", async ({ page, request }) => {
+test("stale tabs replace the full draft and load saved version requires explicit discard", async ({ page, request }) => {
   const id = await createAndOpen(page, request);
+  await page.getByLabel("Description").fill("Original description");
+  await saveEdit(page, 2);
   const stale = await page.context().newPage();
   await stale.goto(`/listings/${id}`);
   await stale.getByLabel("Title", { exact: true }).fill("Stale title");
   await stale.getByLabel("Brand").fill("Unsaved stale brand");
-  await page.getByLabel("Title", { exact: true }).fill("First newer title");
-  await saveEdit(page, 2);
-  await stale.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(stale.locator("form").getByRole("alert")).toContainText("newer saved version");
-  await expect(stale.getByLabel("Title", { exact: true })).toHaveValue("Stale title");
-  await expect(stale.getByLabel("Brand")).toHaveValue("Unsaved stale brand");
-  await expect(stale.locator('input[name="expectedRevision"]')).toHaveValue("1");
-  stale.once("dialog", (dialog) => dialog.dismiss());
-  await stale.getByRole("button", { name: "Load saved version" }).click();
-  await expect(stale.getByLabel("Title", { exact: true })).toHaveValue("Stale title");
-  await page.getByLabel("Title", { exact: true }).fill("Latest title");
+  await page.getByLabel("Title", { exact: true }).fill("Newer title");
+  await page.getByLabel("Description").fill("Newer description");
   await saveEdit(page, 3);
   await stale.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(stale.locator("form").getByRole("alert")).toContainText("newer saved version");
+  await expect(stale.getByRole("status")).toHaveText("Draft saved.");
+  await expect(stale.getByLabel("Title", { exact: true })).toHaveValue("Stale title");
+  await expect(stale.getByLabel("Description")).toHaveValue("Original description");
+  await expect(stale.getByLabel("Brand")).toHaveValue("Unsaved stale brand");
+  await expectRevision(stale, 4);
+  const saved = await page.request.get(`/api/listings/${id}`);
+  expect((await saved.json()).snapshot.fields).toMatchObject({
+    title: "Stale title", description: "Original description", brand: "Unsaved stale brand",
+  });
+
+  await stale.getByLabel("Brand").fill("Keep local input");
+  stale.once("dialog", (dialog) => dialog.dismiss());
+  await stale.getByRole("button", { name: "Load saved version" }).click();
+  await expect(stale.getByLabel("Brand")).toHaveValue("Keep local input");
+  await page.getByLabel("Title", { exact: true }).fill("Latest title");
+  await saveEdit(page, 5);
   stale.once("dialog", (dialog) => dialog.accept());
   await stale.getByRole("button", { name: "Load saved version" }).click();
   await expect(stale.getByLabel("Title", { exact: true })).toHaveValue("Latest title");
-  await expect(stale.getByLabel("Brand")).toHaveValue("");
-  await expect(stale.locator('input[name="expectedRevision"]')).toHaveValue("3");
-  await stale.getByLabel("Brand").fill("Saved after loading");
-  await saveEdit(stale, 4);
-  await page.reload();
-  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Latest title");
-  await expect(page.getByLabel("Brand")).toHaveValue("Saved after loading");
+  await expectRevision(stale, 5);
   await stale.close();
 });
 
@@ -286,12 +299,12 @@ test("update failure preserves input and version, then retry saves once", async 
   await expect(page.locator("form").getByRole("alert")).toContainText("We could not save this draft");
   await expect(page.getByLabel("Description")).toHaveValue("Unsaved description");
   await expect(page.getByLabel("Size label")).toHaveValue("Uncoupled size");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+  await expectRevision(page, 1);
   await cancelLeave(page, () => page.evaluate(() => window.history.back()));
   await saveEdit(page, 2);
   await page.reload();
   await expect(page.getByLabel("Description")).toHaveValue("Unsaved description");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
+  await expectRevision(page, 2);
 });
 
 for (const mode of ["after-commit", "after-commit-unreadable"]) {
@@ -302,20 +315,20 @@ for (const mode of ["after-commit", "after-commit-unreadable"]) {
     await page.getByRole("button", { name: "Save draft", exact: true }).click();
     if (mode === "after-commit-unreadable") {
       await expect(page.locator("form").getByRole("alert")).toContainText("We could not save this draft");
-      await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+      await expectRevision(page, 2);
       await expect(page.getByLabel("Description")).toHaveValue("Committed description");
-      await saveEdit(page, 2);
+      await saveEdit(page, 3);
     } else {
       await expect(page.getByRole("status")).toHaveText("Draft saved.");
     }
-    await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
+    await expectRevision(page, mode === "after-commit-unreadable" ? 3 : 2);
     await page.reload();
     await expect(page.getByLabel("Description")).toHaveValue("Committed description");
-    await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
+    await expectRevision(page, mode === "after-commit-unreadable" ? 3 : 2);
   });
 }
 
-test("client response loss preserves edits and retry recovers only the immediate successor", async ({ page, request }) => {
+test("client response loss preserves edits and an explicit retry writes again", async ({ page, request }) => {
   const id = await createAndOpen(page, request);
   await page.getByLabel("Title", { exact: true }).fill("Committed but unacknowledged");
   await page.route(`**/api/listings/${id}`, async (route) => {
@@ -327,28 +340,30 @@ test("client response loss preserves edits and retry recovers only the immediate
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.locator("form").getByRole("alert")).toContainText("We could not save this draft");
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Committed but unacknowledged");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+  await expectRevision(page, 2);
   await page.unroute(`**/api/listings/${id}`);
-  await saveEdit(page, 2);
+  await saveEdit(page, 3);
   await page.reload();
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("2");
+  await expectRevision(page, 3);
 });
 
-test("identical fields two revisions later are still a conflict", async ({ page, request }) => {
+test("explicit retry overwrites an intervening save and increments revision again", async ({ page, request }) => {
   const id = await createAndOpen(page, request);
   await page.getByLabel("Brand").fill("Desired brand");
   await fault(request, "after-commit-unreadable");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.locator("form").getByRole("alert")).toContainText("We could not save this draft");
+  await expectRevision(page, 2);
   const other = await page.context().newPage();
   await other.goto(`/listings/${id}`);
   await expect(other.getByLabel("Brand")).toHaveValue("Desired brand");
+  await other.getByLabel("Title", { exact: true }).fill("Intervening title");
   await saveEdit(other, 3);
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("newer saved version");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
-  await other.reload();
-  await expect(other.locator('input[name="expectedRevision"]')).toHaveValue("3");
+  await expect(page.getByRole("status")).toHaveText("Draft saved.");
+  await expectRevision(page, 4);
+  const saved = await page.request.get(`/api/listings/${id}`);
+  expect((await saved.json()).snapshot.fields).toMatchObject({ title: "Saved title", brand: "Desired brand" });
   await other.close();
 });
 
@@ -396,13 +411,13 @@ test("a signed-out save keeps unsaved fields without writing", async ({ page, re
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.locator("form").getByRole("alert")).toContainText("Sign in to save");
   await expect(page.getByLabel("Brand")).toHaveValue("Unsaved after sign-out");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+  expect((await page.request.get(`/api/listings/${id}`)).status()).toBe(401);
   await cancelLeave(page, () => page.getByRole("link", { name: "Back to listings" }).click());
   const returning = await page.context().newPage();
   await signIn(returning, request, email);
   await returning.goto(`/listings/${id}`);
   await expect(returning.getByLabel("Brand")).toHaveValue("");
-  await expect(returning.locator('input[name="expectedRevision"]')).toHaveValue("1");
+  await expectRevision(returning, 1);
   await returning.close();
 });
 
@@ -433,6 +448,6 @@ test("foreign, absent, invalid and signed-out detail access is denied; foreign u
   await expect(outsider.getByLabel("Title", { exact: true })).toHaveValue("Unauthorized replacement");
   await page.reload();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Saved title");
-  await expect(page.locator('input[name="expectedRevision"]')).toHaveValue("1");
+  await expectRevision(page, 1);
   await outsiderContext.close();
 });

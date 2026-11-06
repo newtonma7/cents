@@ -85,7 +85,7 @@ export async function requestMagicLink(email: string): Promise<{ kind: "sent" } 
 
 export async function submitDraft(input:
   | { mode: "create"; id: string; fields: DraftInput }
-  | { mode: "edit"; id: string; fields: DraftInput; expectedRevision: number },
+  | { mode: "edit"; id: string; fields: DraftInput },
 ): Promise<DraftMutationResult> {
   const creating = input.mode === "create";
   try {
@@ -95,7 +95,7 @@ export async function submitDraft(input:
       {
         method: creating ? "POST" : "PUT",
         body: JSON.stringify(creating ? { id: input.id, fields: input.fields }
-          : { expectedRevision: input.expectedRevision, fields: input.fields }),
+          : { fields: input.fields }),
       },
       [200, 201, 404, 409, 422],
     );

@@ -2,7 +2,7 @@
 
 ## Ownership and transport
 
-`apps/api` owns Supabase Auth, session refresh, authoritative input validation, ownership checks, persistence, and CAS recovery. Every authenticated request creates its own SDK client with the caller's cookies and public Supabase key. Database requests use that caller's session and RLS. There is no service-role bypass.
+`apps/api` owns Supabase Auth, session refresh, authoritative input validation, ownership checks, persistence, and ambiguous-write recovery. Every authenticated request creates its own SDK client with the caller's cookies and public Supabase key. Database requests use that caller's session and RLS. There is no service-role bypass.
 
 `apps/web` contains UI renderers, controlled forms, client loaders, and a typed HTTP client. Next's two external rewrites are transport only. No Server Actions, auth proxy, route-handler backend, or Supabase client remains in the frontend.
 
@@ -24,13 +24,13 @@ All private responses and callbacks use `Cache-Control: no-store`. Responses con
 | `GET /api/listings` | Session cookies | `200 { listings: [{ id, title, description }] }` |
 | `POST /api/listings` | `{ id, fields: DraftInput }` | `201 { kind: "created" }` |
 | `GET /api/listings/:id` | Session cookies | `200 { kind: "loaded", snapshot }` |
-| `PUT /api/listings/:id` | `{ expectedRevision, fields: DraftInput }` | `200 { kind: "saved", snapshot }` |
+| `PUT /api/listings/:id` | `{ fields: DraftInput }` | `200 { kind: "saved", snapshot }` |
 
 `DraftInput` requires eight raw string fields, including blank strings for unknown facts. The fields are `title`, `description`, `garment_type`, `size_system`, `size_label`, `condition`, `brand`, and `price_usd`.
 
 A Snapshot contains `id`, parsed nullable `fields`, `revision`, `createdAt`, and `updatedAt`. The price in those parsed fields is `price_usd_cents`, an integer or null. Editable DTOs reject injected owner, revision, timestamp, and storage-cent properties.
 
-Creation uses a stable client-generated UUID. A retry acknowledges creation only when that Seller's existing UUID is still at revision 1 and all persisted fields match the submitted fields. Different fields or a later revision return a conflict without overwriting anything. The create form retains unsaved input and offers a link to the saved draft; leaving unsaved input still requires the browser's discard confirmation. Editing uses an atomic expected-revision update. An ambiguous response recovers success only if the current row is the immediate successor and every submitted field matches. Matching fields two revisions later still produce a conflict.
+Creation uses a stable client-generated UUID. A retry acknowledges creation only when that Seller's existing UUID is still at revision 1 and all persisted fields match the submitted fields. Different fields or a later revision return a conflict without overwriting anything. The create form retains unsaved input and offers a link to the saved draft; leaving unsaved input still requires the browser's discard confirmation. Editing replaces all editable fields with one seller-owned update. The database serializes concurrent updates and increments the server-maintained revision for each write. An ambiguous response recovers success when an owner-scoped read finds every submitted field, regardless of revision. Otherwise the API returns a generic temporary error and keeps the editor input. Retrying sends another unconditional update, which can overwrite an intervening save and increment the revision again. Use Load saved version to replace local input after confirming any discard.
 
 ## Errors and page shells
 
@@ -40,10 +40,10 @@ Creation uses a stable client-generated UUID. A retry acknowledges creation only
 | `401` | Absent or definitively invalid session, or rejected login credentials |
 | `403` | Missing, null, or non-matching Origin on an unsafe request |
 | `404` | Foreign, absent, or invalid listing identifier after authentication |
-| `409` | Conflicting create retry or stale edit, with `{ kind: "conflict" }` |
+| `409` | Conflicting create retry, with `{ kind: "conflict" }` |
 | `413` | JSON body exceeds 32 KiB |
 | `415` | Unsafe request does not use `application/json` |
-| `422` | Invalid or unknown DTO properties, invalid field values, or invalid revision |
+| `422` | Invalid or unknown DTO properties or invalid field values |
 | `431` | Node rejects headers above its 16 KiB limit |
 | `500` | Unexpected failure or malformed stored data |
 | `503` | Temporary provider or persistence failure |

@@ -81,6 +81,7 @@ export const mutationResultSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("error"), message: z.string() }),
 ]);
 export type DraftMutationResult = z.infer<typeof mutationResultSchema>;
+export type SaveDraftResult = Exclude<DraftMutationResult, { kind: "created" | "conflict" }>;
 
 export function draftInput(fields: DraftFields): DraftInput {
   const cents = fields.price_usd_cents;

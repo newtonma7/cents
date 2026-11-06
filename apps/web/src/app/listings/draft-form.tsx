@@ -35,7 +35,6 @@ type EditorState = {
   id: string;
   values: DraftInput;
   baseline: DraftInput;
-  revision: number;
   feedback: Feedback;
 };
 
@@ -49,7 +48,6 @@ export function DraftForm(props: EditorProps) {
       id: props.mode === "create" ? props.id : props.snapshot.id,
       values,
       baseline: values,
-      revision: props.mode === "create" ? 1 : props.snapshot.revision,
       feedback: { kind: "idle" },
     };
   });
@@ -88,7 +86,7 @@ export function DraftForm(props: EditorProps) {
         const id = draftIdSchema.parse(data.get("id"));
         const result = await submitDraft(props.mode === "create"
           ? { mode: "create", id, fields }
-          : { mode: "edit", id, fields, expectedRevision: editor.revision });
+          : { mode: "edit", id, fields });
         setEditor((current) => {
           switch (result.kind) {
             case "created":
@@ -99,7 +97,6 @@ export function DraftForm(props: EditorProps) {
                 ...current,
                 values,
                 baseline: values,
-                revision: result.snapshot.revision,
                 feedback: { kind: "saved" },
               };
             }
@@ -143,7 +140,6 @@ export function DraftForm(props: EditorProps) {
             ...current,
             values,
             baseline: values,
-            revision: result.snapshot.revision,
             feedback: { kind: "idle" },
           }));
         } else {
@@ -165,7 +161,6 @@ export function DraftForm(props: EditorProps) {
     <form onSubmit={save} className="draft-form" aria-busy={!hydrated || pending}>
       <input name="id" type="hidden" value={editor.id} />
       <input name="mode" type="hidden" value={props.mode} />
-      <input name="expectedRevision" type="hidden" value={editor.revision} />
       <fieldset disabled={disabled}>
         <legend>Title and description</legend>
         <label htmlFor="title">Title</label>
@@ -254,9 +249,7 @@ export function DraftForm(props: EditorProps) {
       ) : null}
       {editor.feedback.kind === "conflict" ? (
         <p className="error-message" role="alert">
-          {props.mode === "create"
-            ? "This draft already has a saved version with different details. Your changes are still here. Open the saved draft to continue."
-            : "This draft has a newer saved version. Your changes are still here. Load the saved version to continue."}
+          This draft already has a saved version with different details. Your changes are still here. Open the saved draft to continue.
         </p>
       ) : null}
       <p role="status">
