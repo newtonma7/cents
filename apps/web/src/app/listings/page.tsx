@@ -1,8 +1,35 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { listDrafts, session } from "@/lib/api";
+import { listDrafts, logout, session } from "@/lib/api";
 import { PageNotice, usePageData } from "@/lib/page-data";
+
+function LogoutButton() {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(false);
+
+  async function handleLogout() {
+    setPending(true);
+    setError(false);
+    try {
+      await logout();
+      window.location.replace("/");
+    } catch {
+      setPending(false);
+      setError(true);
+    }
+  }
+
+  return (
+    <div className="logout-control">
+      <button className="logout-button" onClick={handleLogout} disabled={pending}>
+        {pending ? "Signing out…" : "Sign out"}
+      </button>
+      {error ? <p className="logout-error" role="alert">We could not complete sign out. Try again.</p> : null}
+    </div>
+  );
+}
 
 async function loadListings() {
   const { seller } = await session();
@@ -21,7 +48,10 @@ export default function ListingsPage() {
         <Link className="wordmark" href="/listings">
           cents
         </Link>
-        <span className="seller-email">{seller.email}</span>
+        <div className="seller-account">
+          <span className="seller-email">{seller.email}</span>
+          <LogoutButton />
+        </div>
       </header>
       <section className="listing-section" aria-labelledby="listings-heading">
         <div className="section-heading">

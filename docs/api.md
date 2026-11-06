@@ -17,6 +17,7 @@ All private responses and callbacks use `Cache-Control: no-store`. Responses con
 | `GET /healthz` | None | `200 { ok: true }`. This is process health, not provider health. |
 | `GET /api/session` | Session cookies | `200 { seller: { id, email } }` |
 | `POST /api/auth/magic-link` | `{ email }` | `200 { kind: "sent" }` |
+| `POST /api/auth/logout` | `{}` | `204`, clears the current session cookies |
 | `GET /auth/confirm` | `code` and optional `sb_flow_id`, or `token_hash` and `type=email` query | `303` to the configured origin's `/listings`, with session cookies |
 | `GET /api/listings` | Session cookies | `200 { listings: [{ id, title, description }] }` |
 | `POST /api/listings` | `{ id, fields: DraftInput }` | `201 { kind: "created" }` |
@@ -45,7 +46,7 @@ Creation uses a stable client-generated UUID. A retry acknowledges creation only
 | `500` | Unexpected failure or malformed stored data |
 | `503` | Temporary provider or persistence failure |
 
-Missing listing reads and edits return `{ kind: "missing" }`. Other errors return `{ kind: "error", message }` with a public message. A temporary provider failure does not become a 401 or delete the session. Provider failures cannot reach SDK diagnostic messages unchanged; the fetch boundary retains machine error codes but removes raw provider error bodies. It maps rate limits and all upstream 5xx statuses to 503 so SDK refresh recovery treats them as retryable rather than deleting the session.
+Missing listing reads and edits return `{ kind: "missing" }`. Other errors return `{ kind: "error", message }` with a public message. A temporary provider failure during user lookup or token refresh does not become a 401 or delete the session. Provider failures cannot reach SDK diagnostic messages unchanged; the fetch boundary retains machine error codes but removes raw provider error bodies. It maps rate limits and all upstream 5xx statuses to 503 so SDK refresh recovery treats them as retryable. Logout calls `auth.signOut({ scope: "local" })` and returns 503 on provider errors. The SDK may already clear the local session and cookies for a logout error, so the UI stays in place and offers a retry. A later logout with no session succeeds. A transient refresh failure before logout reaches the provider returns 503 without clearing the session. Local logout revokes the current refresh token, but an access-token JWT remains valid until expiry.
 
 The frontend now loads private data over HTTP. Its neutral HTML shell may return 200 before the API returns 401, 404, or 503. The HTML document is not a resource-authorization response. The API owns those statuses. The UI still redirects signed-out visitors, shows not-found for inaccessible drafts, and distinguishes infrastructure errors. Acceptance tests assert API statuses and visible UI outcomes separately.
 
@@ -61,4 +62,4 @@ Unsafe JSON requests, including magic-link requests, require an Origin that exac
 
 The callback accepts either a nonempty PKCE `code` of at most 2048 characters with an optional `sb_flow_id` of at most 128 characters, or `type=email` and a nonempty token hash of at most 2048 characters. Mixed proof types and repeated proof parameters are rejected. PKCE exchanges require the verifier cookie from the browser profile that requested the email. Default Supabase email templates use this flow; custom token-hash templates remain supported. The callback ignores request Host and any `next` destination. Invalid proof redirects to a fixed sign-in error at the configured origin. Temporary verification failures return 503 rather than falsely reporting an expired link. Callback responses also use `Referrer-Policy: no-referrer`. Next development access logs omit this callback URL. Configure external ingress and access logs to redact callback query strings, cookies, and authorization headers.
 
-No extension authentication, logout UI, delete, publish, or pairing endpoints are part of this migration.
+The listings page provides a logout button beside the Seller email. A successful logout clears the current session and performs a full document navigation to `/`. It does not revoke other Seller sessions. No extension authentication, delete, publish, or pairing endpoints are part of this migration.

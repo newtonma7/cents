@@ -50,6 +50,45 @@ test("a Seller can create an account and return with magic links", async ({
   await expect(page).toHaveURL(/\/listings$/);
 });
 
+test("a Seller can sign out and another Seller can sign in", async ({ page, request }) => {
+  const sellerA = "seller-a-logout@example.com";
+  await page.goto("/");
+  const linkA = await requestMagicLink(page, request, sellerA);
+  await page.goto(linkA);
+  await expect(page.getByText(sellerA)).toBeVisible();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+  const sessionStatus = await page.evaluate(async () => (await fetch("/api/session")).status);
+  expect(sessionStatus).toBe(401);
+  await page.goto("/listings");
+  await expect(page).toHaveURL("/");
+
+  const sellerB = "seller-b-logout@example.com";
+  const linkB = await requestMagicLink(page, request, sellerB);
+  await page.goto(linkB);
+  await expect(page.getByText(sellerB)).toBeVisible();
+  await expect(page.getByText(sellerA)).toHaveCount(0);
+});
+
+test("a logout outage shows retry and does not navigate until retry succeeds", async ({ page, request }) => {
+  await page.goto("/");
+  const link = await requestMagicLink(page, request, "logout-retry@example.com");
+  await page.goto(link);
+  expect((await request.post("http://127.0.0.1:54321/test/auth", {
+    data: { fault: "logout-outage" },
+  })).ok()).toBeTruthy();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "We could not complete sign out. Try again." })).toBeVisible();
+  await expect(page).toHaveURL(/\/listings$/);
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeEnabled();
+
+  await request.post("http://127.0.0.1:54321/test/auth", { data: {} });
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+});
+
 test("a Seller can save and reload a Canonical Listing draft", async ({
   page,
   request,

@@ -7,6 +7,7 @@ const pendingCodes = new Map();
 let nextEmailFlow = null;
 const accessTokens = new Map();
 const refreshTokens = new Map();
+const refreshTokenByAccessToken = new Map();
 const sellers = new Map();
 const listings = new Map();
 let messageNumber = 0;
@@ -94,6 +95,7 @@ function sessionFor(seller, mode = null) {
   const refreshToken = randomUUID();
   accessTokens.set(accessToken, seller);
   refreshTokens.set(refreshToken, seller);
+  refreshTokenByAccessToken.set(accessToken, refreshToken);
 
   return {
     access_token: accessToken,
@@ -329,6 +331,20 @@ const server = createServer(async (request, response) => {
       json(response, 200, acceptsObject ? rows[0] : rows);
       return;
     }
+  }
+
+  if (url.pathname === "/auth/v1/logout" && request.method === "POST") {
+    if (authFault === "logout-outage") { json(response, 503, { message: "Temporary outage" }); return; }
+    const accessToken = bearerToken(request);
+    const refreshToken = refreshTokenByAccessToken.get(accessToken);
+    if (!accessTokens.has(accessToken) || !refreshToken) {
+      json(response, 401, { message: "Invalid token" });
+      return;
+    }
+    refreshTokens.delete(refreshToken);
+    refreshTokenByAccessToken.delete(accessToken);
+    response.writeHead(204).end();
+    return;
   }
 
   if (url.pathname === "/auth/v1/user" && request.method === "GET") {

@@ -11,6 +11,62 @@ function cookies(response: Awaited<ReturnType<APIRequestContext["get"]>>) {
 
 test.afterEach(async ({ request }) => { await authMode(request, {}); });
 
+test("logout is idempotent when no session exists", async ({ request }) => {
+  const response = await request.post(apiOrigin + "/api/auth/logout", { headers: mutationHeaders, data: {} });
+  expect(response.status()).toBe(204);
+  expect(cookies(response)).toEqual([]);
+});
+
+test("logout clears only the current session cookies and leaves another session active", async ({ request, playwright }) => {
+  const otherSession = await playwright.request.newContext();
+  try {
+    const email = await apiSignIn(request);
+    await apiSignIn(otherSession, email);
+    const response = await request.post(apiOrigin + "/api/auth/logout", { headers: mutationHeaders, data: {} });
+    expect(response.status()).toBe(204);
+    const updates = cookies(response);
+    expect(updates.length).toBeGreaterThan(0);
+    for (const value of updates) {
+      expect(value).toContain("Max-Age=0");
+      expect(value).toContain("HttpOnly");
+      expect(value).toContain("SameSite=Lax");
+      expect(value).toContain("Path=/");
+    }
+    expect((await request.get(apiOrigin + "/api/session")).status()).toBe(401);
+    expect((await otherSession.get(apiOrigin + "/api/session")).status()).toBe(200);
+  } finally { await otherSession.dispose(); }
+});
+
+test("logout provider outage returns generic 503 and clears the SDK local session", async ({ request }) => {
+  await apiSignIn(request);
+  await authMode(request, { fault: "logout-outage" });
+  const response = await request.post(apiOrigin + "/api/auth/logout", { headers: mutationHeaders, data: {} });
+  expect(response.status()).toBe(503);
+  expect(await response.json()).toEqual({ kind: "error", message: "We could not complete sign out. Try again." });
+  const updates = cookies(response);
+  expect(updates.length).toBeGreaterThan(0);
+  for (const value of updates) {
+    expect(value).toContain("Max-Age=0");
+    expect(value).toContain("HttpOnly");
+  }
+  expect((await request.get(apiOrigin + "/api/session")).status()).toBe(401);
+  await authMode(request, {});
+  expect((await request.post(apiOrigin + "/api/auth/logout", { headers: mutationHeaders, data: {} })).status()).toBe(204);
+});
+
+test("transient refresh failure during logout returns 503 and retains cookies", async ({ request }) => {
+  await authMode(request, { session: "expired" });
+  await apiSignIn(request);
+  const before = await request.storageState();
+  await authMode(request, { fault: "refresh-outage" });
+  const response = await request.post(apiOrigin + "/api/auth/logout", { headers: mutationHeaders, data: {} });
+  expect(response.status()).toBe(503);
+  expect(cookies(response)).toEqual([]);
+  expect(await request.storageState()).toEqual(before);
+  await authMode(request, {});
+  expect((await request.get(apiOrigin + "/api/session")).status()).toBe(200);
+});
+
 test("absent and malformed sessions return 401 without exposing tokens", async ({ request }) => {
   for (const path of ["/api/session", "/api/listings", "/api/listings/not-a-uuid"]) {
     const response = await request.get(apiOrigin + path);

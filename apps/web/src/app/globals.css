@@ -268,9 +268,32 @@ select:focus-visible {
   background: var(--card);
 }
 
+.seller-account {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
 .seller-email {
   color: var(--muted);
   font-size: 0.875rem;
+}
+
+.logout-control {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.logout-button {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+}
+
+.logout-error {
+  margin: 0;
+  color: var(--error);
+  font-size: 0.8rem;
 }
 
 .listing-section {
@@ -476,9 +499,24 @@ select:focus-visible {
     width: 100%;
   }
 
+  .seller-account {
+    min-width: 0;
+    gap: 0.65rem;
+  }
+
   .seller-email {
-    max-width: 55vw;
+    max-width: 45vw;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .logout-control {
+    flex-wrap: wrap;
+    justify-content: end;
+  }
+
+  .logout-error {
+    max-width: 12rem;
+    text-align: right;
   }
 }

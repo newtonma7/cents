@@ -23,6 +23,13 @@ async function read<T>(
 }
 
 export const session = () => read("/api/session", sessionSchema);
+export async function logout(): Promise<void> {
+  const response = await fetch("/api/auth/logout", {
+    method: "POST", credentials: "same-origin", cache: "no-store",
+    headers: { "Content-Type": "application/json" }, body: "{}",
+  });
+  if (response.status !== 204) throw new ApiError(response.status);
+}
 export const listDrafts = () => read("/api/listings", listingsSchema);
 export const getDraft = (id: string) => read("/api/listings/" + encodeURIComponent(id), loadedDraftSchema);
 

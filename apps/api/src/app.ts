@@ -22,6 +22,11 @@ export function createApp(config: ApiConfig) {
     next();
   });
   app.use(express.json({ limit: "32kb" }));
+  app.post("/api/auth/logout", async (req, res) => {
+    const { error } = await requestClient(req, res, config).auth.signOut({ scope: "local" });
+    if (error) throw new HttpError(503, "We could not complete sign out. Try again.");
+    res.status(204).end();
+  });
   app.post("/api/auth/magic-link", async (req, res) => {
     const parsed = magicLinkSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(422, "Enter a valid email address.");
