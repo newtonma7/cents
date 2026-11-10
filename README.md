@@ -76,4 +76,4 @@ npm run test:production
 
 The 31 original behavioral checks remain. Added checks exercise real HTTP authentication, strict DTOs, exact-Origin CSRF rejection, status codes, caller isolation, concurrent refresh and edits, and import boundaries. The fixture models Supabase refresh-token reuse for parallel requests. It does not prove hosted provider rotation behavior or PostgreSQL RLS. See [local SQL verification](supabase/tests/README.md).
 
-See [the API reference](docs/api.md) for contracts and intentional HTML status changes. Issue [#25](https://github.com/newtonma7/cents/issues/25) tracks this separation. Dependency advisory work remains separate in [#24](https://github.com/newtonma7/cents/issues/24).
+See [the API reference](docs/api.md) for contracts and intentional HTML status changes, and [the Effect migration guide](docs/effect-migration.md) for the current listing-read design and migration gates. Issue [#25](https://github.com/newtonma7/cents/issues/25) tracks this separation. Dependency advisory work remains separate in [#24](https://github.com/newtonma7/cents/issues/24).
