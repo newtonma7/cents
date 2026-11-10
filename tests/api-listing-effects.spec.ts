@@ -9,6 +9,7 @@ import {
 const sellerA = sellerSchema.parse({ id: "11111111-1111-4111-8111-111111111111", email: "a@example.com" });
 const sellerB = sellerSchema.parse({ id: "22222222-2222-4222-8222-222222222222", email: "b@example.com" });
 const listingId = "33333333-3333-4333-8333-333333333333";
+const listingIdB = "44444444-4444-4444-8444-444444444444";
 
 function row(sellerId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -118,35 +119,59 @@ test("listing service types returned failures and preserves query defects", asyn
   await expect(Effect.runPromise(defect.list())).rejects.toBe(sentinel);
 });
 
-test("concurrent listing capabilities keep their SDK transports and owner filters separate", async () => {
+test("concurrent listing capabilities keep collection and detail reads with their sellers", async () => {
   const calls: Array<{ owner: string; url: URL; release: () => void }> = [];
-  const makeReads = (seller: typeof sellerA) => readsFor(seller, (url) => new Promise<Response>((resolve) => {
+  let arrivals = 0;
+  const arrivalSignals = new Map<number, () => void>();
+  const waitForArrivals = (count: number) => new Promise<void>((resolve) => arrivalSignals.set(count, resolve));
+  const bothCollectionsArrived = waitForArrivals(2);
+  const bothDetailsArrived = waitForArrivals(4);
+  const makeReads = (seller: typeof sellerA, index: number) => readsFor(seller, (url) => new Promise<Response>((resolve) => {
+    const detail = url.searchParams.has("id");
+    const id = index === 0 ? listingId : listingIdB;
+    const title = index === 0 ? "Seller A listing" : "Seller B listing";
     calls.push({
       owner: seller.id,
       url,
-      release: () => resolve(response([row(seller.id), row(seller.id === sellerA.id ? sellerB.id : sellerA.id)])),
+      release: () => resolve(response(detail
+        ? row(seller.id, { id, title })
+        : [row(seller.id, { id, title })])),
     });
+    arrivalSignals.get(++arrivals)?.();
   }));
-  const readsA = makeReads(sellerA);
-  const readsB = makeReads(sellerB);
-  const program = Effect.gen(function* () {
+  const readsA = makeReads(sellerA, 0);
+  const readsB = makeReads(sellerB, 1);
+  const collectionProgram = Effect.gen(function* () {
     const reads = yield* ListingReads;
     return yield* reads.list();
   });
-  const effectA = Effect.runPromise(Effect.provideService(program, ListingReads, readsA));
-  const effectB = Effect.runPromise(Effect.provideService(program, ListingReads, readsB));
-  await new Promise<void>((resolve) => {
-    const poll = () => calls.length === 2 ? resolve() : queueMicrotask(poll);
-    poll();
+  const detailProgram = (id: string) => Effect.gen(function* () {
+    const reads = yield* ListingReads;
+    return yield* reads.get(id);
   });
-
+  let collectionASettled = false;
+  let detailASettled = false;
+  const collectionA = Effect.runPromise(Effect.provideService(collectionProgram, ListingReads, readsA))
+    .then((value) => { collectionASettled = true; return value; });
+  const collectionB = Effect.runPromise(Effect.provideService(collectionProgram, ListingReads, readsB));
+  await bothCollectionsArrived;
   calls[1].release();
+  expect(await collectionB).toEqual([{ id: listingIdB, title: "Seller B listing", description: null }]);
+  expect(collectionASettled).toBe(false);
   calls[0].release();
-  const [listA, listB] = await Promise.all([effectA, effectB]);
-  expect(listA).toEqual([{ id: listingId, title: "Stored title", description: null }]);
-  expect(listB).toEqual([{ id: listingId, title: "Stored title", description: null }]);
-  expect(calls.map(({ owner, url }) => [owner, url.searchParams.get("select")])).toEqual([
-    [sellerA.id, "id,seller_id,title,description"],
-    [sellerB.id, "id,seller_id,title,description"],
+  expect(await collectionA).toEqual([{ id: listingId, title: "Seller A listing", description: null }]);
+
+  const detailA = Effect.runPromise(Effect.provideService(detailProgram(listingId), ListingReads, readsA))
+    .then((value) => { detailASettled = true; return value; });
+  const detailB = Effect.runPromise(Effect.provideService(detailProgram(listingIdB), ListingReads, readsB));
+  await bothDetailsArrived;
+  calls[3].release();
+  expect(await detailB).toMatchObject({ id: listingIdB, fields: { title: "Seller B listing" } });
+  expect(detailASettled).toBe(false);
+  calls[2].release();
+  expect(await detailA).toMatchObject({ id: listingId, fields: { title: "Seller A listing" } });
+  expect(calls.map(({ owner, url }) => [owner, url.searchParams.get("seller_id")])).toEqual([
+    [sellerA.id, null], [sellerB.id, null],
+    [sellerA.id, `eq.${sellerA.id}`], [sellerB.id, `eq.${sellerB.id}`],
   ]);
 });

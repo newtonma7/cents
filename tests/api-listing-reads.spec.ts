@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, request as playwrightRequest, test } from "@playwright/test";
 import { emptyDraftInput } from "@cents/contracts";
 import { apiOrigin, apiSignIn, fixtureOrigin, mutationHeaders } from "./support/api";
 
@@ -56,6 +56,75 @@ test("listing reads preserve their HTTP DTOs and status contracts", async ({ req
   expect(missing.status()).toBe(404);
   expect(await missing.json()).toEqual({ kind: "missing" });
   expect(missing.headers()).toMatchObject(privateHeaders);
+});
+
+test("listing GET refreshes expired sessions and isolates concurrent seller cookies", async () => {
+  const sellerA = `${randomUUID()}@example.com`;
+  const sellerB = `${randomUUID()}@example.com`;
+  const contextA = await playwrightRequest.newContext();
+  const contextB = await playwrightRequest.newContext();
+  try {
+    await apiSignIn(contextA, sellerA);
+    const idA = randomUUID();
+    expect((await contextA.post(apiOrigin + "/api/listings", {
+      headers: mutationHeaders,
+      data: { id: idA, fields: { ...emptyDraftInput, title: "Seller A private listing" } },
+    })).status()).toBe(201);
+
+    await apiSignIn(contextB, sellerB);
+    const idB = randomUUID();
+    expect((await contextB.post(apiOrigin + "/api/listings", {
+      headers: mutationHeaders,
+      data: { id: idB, fields: { ...emptyDraftInput, title: "Seller B private listing" } },
+    })).status()).toBe(201);
+
+    for (const context of [contextA, contextB]) {
+      expect((await context.post(fixtureOrigin + "/test/auth", {
+        data: { session: "expired" },
+      })).status()).toBe(200);
+      await apiSignIn(context, context === contextA ? sellerA : sellerB);
+    }
+
+    expect((await contextA.post(fixtureOrigin + "/test/fault", {
+      data: { mode: "read-failure", count: 1 },
+    })).status()).toBe(200);
+    const failedRefreshRead = await contextA.get(apiOrigin + "/api/listings");
+    expect(failedRefreshRead.status()).toBe(503);
+    expect(failedRefreshRead.headers()["set-cookie"]).toContain("Max-Age=34560000");
+    expect(await failedRefreshRead.json()).toEqual({
+      kind: "error", message: "Could not load canonical listings.",
+    });
+
+    const [collectionA, collectionB] = await Promise.all([
+      contextA.get(apiOrigin + "/api/listings"),
+      contextB.get(apiOrigin + "/api/listings"),
+    ]);
+    expect(collectionA.status()).toBe(200);
+    expect(await collectionA.json()).toEqual({
+      listings: [{ id: idA, title: "Seller A private listing", description: null }],
+    });
+    expect(collectionB.status()).toBe(200);
+    expect(collectionB.headers()["set-cookie"]).toContain("Max-Age=34560000");
+    expect(await collectionB.json()).toEqual({
+      listings: [{ id: idB, title: "Seller B private listing", description: null }],
+    });
+
+    const [detailA, detailB] = await Promise.all([
+      contextA.get(apiOrigin + "/api/listings/" + idA),
+      contextB.get(apiOrigin + "/api/listings/" + idB),
+    ]);
+    expect((await detailA.json()).snapshot).toMatchObject({ id: idA, fields: { title: "Seller A private listing" } });
+    expect((await detailB.json()).snapshot).toMatchObject({ id: idB, fields: { title: "Seller B private listing" } });
+    expect(await (await contextA.get(apiOrigin + "/api/listings")).json()).toEqual({
+      listings: [{ id: idA, title: "Seller A private listing", description: null }],
+    });
+    expect(await (await contextB.get(apiOrigin + "/api/listings")).json()).toEqual({
+      listings: [{ id: idB, title: "Seller B private listing", description: null }],
+    });
+  } finally {
+    await contextA.dispose();
+    await contextB.dispose();
+  }
 });
 
 test("listing reads preserve unavailable messages and write recovery", async ({ request }) => {
